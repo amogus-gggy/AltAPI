@@ -4,7 +4,7 @@ from setuptools import Extension, find_packages, setup
 from Cython.Build import cythonize
 
 if struct.calcsize("P") * 8 != 64:
-    raise RuntimeError("Nebula Cython extension must be built with 64-bit Python.")
+    raise RuntimeError("AltAPI Cython extension must be built with 64-bit Python.")
 
 
 extensions = [
@@ -16,15 +16,15 @@ extensions = [
 
 
 setup(
-    name="project-nebula",
+    name="altapi",
     version="1.1",
     author="vxiddev, amogus-gggy",
     description="Simple ASGI micro framework for Python",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/amogus-gggy/Project-Nebula",
+    url="https://github.com/amogus-gggy/AltAPI",
     project_urls={
-        "Homepage": "https://github.com/amogus-gggy/Project-Nebula",
+        "Homepage": "https://github.com/amogus-gggy/AltAPI",
     },
     classifiers=[
         "Programming Language :: Python :: 3",
