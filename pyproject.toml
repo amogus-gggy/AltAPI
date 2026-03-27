@@ -1,15 +1,33 @@
-[tool.poetry]
-name = "altapi"
-version = "0.1.0"
-description = "A sample description."
-authors = ["Author Name <author@example.com>"]
-
-[tool.poetry.dependencies]
-python = "^3.8"
-
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0", "wheel", "cython>=3.0.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry.urls]
-homepage = "https://github.com/amogus-gggy/AltAPI"
+[project]
+name = "AltAPI"
+version = "1.1"
+
+authors = [
+    {name = "amogus-gggy"},
+    {name = "vxiddev"}
+]
+
+description = "Simple ASGI micro framework for Python"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "uvicorn[standard]>=0.30.0",
+    "anyio>=4.0.0",
+    "jinja2>=3.0.0",
+    "ujson"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "cython>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/amogus-gggy/AltAPI"
