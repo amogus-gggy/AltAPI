@@ -3,19 +3,17 @@ import inspect
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Dict, Any, Union
-from pathlib import Path
-from contextlib import asynccontextmanager
 
 from .http.responses import HTMLResponse
 
 from .router import Router
 from .websocket.ws import WebSocket
 from .http.request import Request
-from .http.responses import JSONResponse, FileResponse, PlainTextResponse
+from .http.responses import FileResponse
 from .middleware.middleware import Middleware, ASGIApp
-from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_405_BODY, DEFAULT_500_BODY
+from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
-from .caching.cache import CacheMiddleware, CacheManager, InMemoryCache, cache as cache_decorator, CacheBackend
+from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
@@ -52,9 +50,9 @@ async def _lifespan(app):
 class AltAPI:
     """
     Main AltAPI application class.
-    
+
     ASGI framework for building web applications with support for:
-    - HTTP routes (GET, POST, PUT, DELETE)
+    - HTTP routes (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT)
     - WebSocket connections
     - Middleware
     - Jinja2 templates
@@ -183,6 +181,51 @@ class AltAPI:
         """
         return self.route(path, ["DELETE"])
 
+    def patch(self, path):
+        """
+        Decorator for registering PATCH routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["PATCH"])
+
+    def head(self, path):
+        """
+        Decorator for registering HEAD routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["HEAD"])
+
+    def options(self, path):
+        """
+        Decorator for registering OPTIONS routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["OPTIONS"])
+
+    def trace(self, path):
+        """
+        Decorator for registering TRACE routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["TRACE"])
+
+    def connect(self, path):
+        """
+        Decorator for registering CONNECT routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["CONNECT"])
+
     def websocket(self, path):
         """
         Decorator for registering WebSocket routes.
@@ -251,7 +294,6 @@ class AltAPI:
         host: str = "0.0.0.0",
         port: int = 8000,
         workers: int = 1,
-        gc_optimize: bool = True,
         access_log: bool = True,
     ):
         """

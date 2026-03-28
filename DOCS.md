@@ -896,7 +896,6 @@ if __name__ == "__main__":
 | `host` | `str` | Host to bind | `"0.0.0.0"` |
 | `port` | `int` | Port to bind | `8000` |
 | `workers` | `int` | Number of worker processes | `1` |
-| `gc_optimize` | `bool` | Optimize garbage collector settings | `True` |
 | `access_log` | `bool` | Enable request logging | `True` |
 
 ### Multi-Process Mode

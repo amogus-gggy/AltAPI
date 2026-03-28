@@ -1,5 +1,5 @@
 import json
-from typing import Callable, Any, Dict, Optional, List, Tuple
+from typing import Callable, Any, Dict, Optional
 
 
 class Request:
@@ -12,14 +12,14 @@ class Request:
         self.method = scope.get("method", "GET")
         self.path = scope.get("path", "/")
         self.query_string = scope.get("query_string", b"").decode()
-        self.headers = scope.get("headers", [])  # Храним как список кортежей
+        self.headers = scope.get("headers", [])  # Store as list of tuples
         self.path_params = path_params or {}
         self._body: Optional[bytes] = None
         self._headers_dict: Optional[Dict[str, str]] = None
 
     @property
     def headers_dict(self) -> Dict[str, str]:
-        """Ленивое получение заголовков как dict."""
+        """Lazy conversion of headers to dict."""
         if self._headers_dict is None:
             self._headers_dict = {
                 k.decode(): v.decode()

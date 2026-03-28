@@ -1,100 +1,98 @@
 """
-Модуль для кеширования запросов.
+Module for caching requests.
 """
 import time
 import asyncio
-import hashlib
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Callable, Type, Union
+from typing import Any, Dict, Optional, Callable, Union
 from functools import wraps
 
 from ..middleware.middleware import BaseMiddleware
-from ..http.request import Request
 
 
 class CacheBackend(ABC):
     """
-    Базовый абстрактный класс для бекендов кеширования.
+    Base abstract class for caching backends.
     """
 
     @abstractmethod
     async def get(self, key: str) -> Optional[Any]:
         """
-        Получить значение из кеша по ключу.
+        Get a value from cache by key.
 
         Args:
-            key: Кэш-ключ
+            key: Cache key
 
         Returns:
-            Значение или None, если ключ не найден или истёк
+            Value or None if key not found or expired
         """
         pass
 
     @abstractmethod
     async def set(self, key: str, value: Any, expires: Optional[int] = None) -> None:
         """
-        Установить значение в кеш.
+        Set a value in cache.
 
         Args:
-            key: Кэш-ключ
-            value: Значение для сохранения
-            expires: Время жизни в секундах (None = без ограничения)
+            key: Cache key
+            value: Value to store
+            expires: Lifetime in seconds (None = no limit)
         """
         pass
 
     @abstractmethod
     async def delete(self, key: str) -> None:
         """
-        Удалить значение из кеша.
+        Delete a value from cache.
 
         Args:
-            key: Кэш-ключ
+            key: Cache key
         """
         pass
 
     @abstractmethod
     async def clear(self) -> None:
         """
-        Очистить весь кеш.
+        Clear all cache.
         """
         pass
 
 
 class InMemoryCache(CacheBackend):
     """
-    Простой бекенд кеширования в памяти.
+    Simple in-memory caching backend.
     """
 
     def __init__(self, max_size: int = 1000):
         """
-        Инициализация InMemoryCache.
+        Initialize InMemoryCache.
 
         Args:
-            max_size: Максимальное количество записей в кеше
+            max_size: Maximum number of entries in cache
         """
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._max_size = max_size
 
     async def get(self, key: str) -> Optional[Any]:
-        """Получить значение из кеша."""
+        """Get a value from cache."""
         entry = self._cache.get(key)
         if entry is None:
             return None
 
-        # Проверка времени жизни
+        # Check lifetime
         expires_at = entry.get("expires_at")
         if expires_at is not None and time.time() > expires_at:
-            # Истёк срок жизни
+            # Expired
             await self.delete(key)
             return None
 
         return entry["value"]
 
     async def set(self, key: str, value: Any, expires: Optional[int] = None) -> None:
-        """Установить значение в кеш."""
-        # Удаляем oldest entry если достигнут лимит
+        """Set a value in cache."""
+        # Remove oldest entry if limit reached
         if len(self._cache) >= self._max_size and key not in self._cache:
-            # Простая стратегия: удаляем первый попавшийся (можно улучшить до LRU)
+            # Simple strategy: remove first found (can be improved to LRU)
             oldest_key = next(iter(self._cache))
             await self.delete(oldest_key)
 
@@ -109,19 +107,19 @@ class InMemoryCache(CacheBackend):
         }
 
     async def delete(self, key: str) -> None:
-        """Удалить значение из кеша."""
+        """Delete a value from cache."""
         self._cache.pop(key, None)
 
     async def clear(self) -> None:
-        """Очистить весь кеш."""
+        """Clear all cache."""
         self._cache.clear()
 
     async def cleanup_expired(self) -> int:
         """
-        Очистить истёкшие записи.
+        Clean up expired entries.
 
         Returns:
-            Количество удалённых записей
+            Number of deleted entries
         """
         now = time.time()
         expired_keys = [
@@ -136,7 +134,7 @@ class InMemoryCache(CacheBackend):
 
 class CacheManager:
     """
-    Менеджер для управления бекендами кеширования.
+    Manager for managing caching backends.
     """
 
     _default_backend: Optional[CacheBackend] = None
@@ -145,47 +143,47 @@ class CacheManager:
     @classmethod
     def set_default_backend(cls, backend: CacheBackend) -> None:
         """
-        Установить бекенд по умолчанию.
+        Set the default backend.
 
         Args:
-            backend: Экземпляр бекенда
+            backend: Backend instance
         """
         cls._default_backend = backend
 
     @classmethod
     def get_default_backend(cls) -> CacheBackend:
         """
-        Получить бекенд по умолчанию.
+        Get the default backend.
 
         Returns:
-            Бекенд кеширования
+            Caching backend
         """
         if cls._default_backend is None:
-            # Создаём InMemoryCache по умолчанию
+            # Create InMemoryCache by default
             cls._default_backend = InMemoryCache()
         return cls._default_backend
 
     @classmethod
     def register_backend(cls, name: str, backend: CacheBackend) -> None:
         """
-        Зарегистрировать именованный бекенд.
+        Register a named backend.
 
         Args:
-            name: Имя бекенда
-            backend: Экземпляр бекенда
+            name: Backend name
+            backend: Backend instance
         """
         cls._backends[name] = backend
 
     @classmethod
     def get_backend(cls, name: Optional[str] = None) -> CacheBackend:
         """
-        Получить бекенд по имени или по умолчанию.
+        Get a backend by name or default.
 
         Args:
-            name: Имя бекенда (None = использовать бекенд по умолчанию)
+            name: Backend name (None = use default backend)
 
         Returns:
-            Бекенд кеширования
+            Caching backend
         """
         if name is None:
             return cls.get_default_backend()
@@ -200,14 +198,14 @@ def cache(
     backend: Optional[Union[str, CacheBackend]] = None,
 ):
     """
-    Декоратор для кеширования результатов функции.
+    Decorator for caching function results.
 
     Args:
-        expires: Время жизни кеша в секундах
-        key_prefix: Префикс для ключа кеша
-        backend: Бекенд для кеширования (строка-имя или экземпляр CacheBackend)
+        expires: Cache lifetime in seconds
+        key_prefix: Prefix for cache key
+        backend: Backend for caching (string name or CacheBackend instance)
 
-    Пример:
+    Example:
         @cache(expires=3600)
         async def get_data(request):
             return JSONResponse({"data": "expensive computation"})
@@ -216,13 +214,13 @@ def cache(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # Получаем бекенд
+            # Get backend
             if isinstance(backend, CacheBackend):
                 cache_backend = backend
             else:
                 cache_backend = CacheManager.get_backend(backend)
 
-            # Генерируем ключ кеша из аргументов
+            # Generate cache key from arguments
             request = None
             for arg in args:
                 if hasattr(arg, "path"):  # Request-like object
@@ -232,24 +230,24 @@ def cache(
             if request is not None:
                 cache_key = f"{key_prefix}{func.__name__}:{request.path}"
             else:
-                # Для функций без request используем хеш аргументов
+                # Use hash of arguments for functions without request
                 import hashlib
 
                 args_key = str(args) + str(sorted(kwargs.items()))
                 args_hash = hashlib.md5(args_key.encode()).hexdigest()[:8]
                 cache_key = f"{key_prefix}{func.__name__}:{args_hash}"
 
-            # Пробуем получить из кеша
+            # Try to get from cache
             cached = await cache_backend.get(cache_key)
             if cached is not None:
                 return cached
 
-            # Вызываем функцию
+            # Call function
             result = func(*args, **kwargs)
             if asyncio.iscoroutine(result):
                 result = await result
 
-            # Сохраняем в кеш
+            # Save to cache
             await cache_backend.set(cache_key, result, expires=expires)
 
             return result
@@ -261,9 +259,9 @@ def cache(
 
 class CacheMiddleware(BaseMiddleware):
     """
-    Middleware для автоматического кеширования HTTP-запросов.
+    Middleware for automatic caching of HTTP requests.
 
-    Пример использования:
+    Example usage:
         app = AltAPI(middleware=[
             Middleware(CacheMiddleware, cache_timeout=300)
         ])
@@ -276,12 +274,12 @@ class CacheMiddleware(BaseMiddleware):
 
     def __init__(self, app, cache_timeout: int = 300, backend: Optional[CacheBackend] = None):
         """
-        Инициализация CacheMiddleware.
+        Initialize CacheMiddleware.
 
         Args:
-            app: ASGI приложение
-            cache_timeout: Время жизни кеша по умолчанию в секундах
-            backend: Бекенд для кеширования (по умолчанию InMemoryCache)
+            app: ASGI application
+            cache_timeout: Default cache lifetime in seconds
+            backend: Backend for caching (default: InMemoryCache)
         """
         super().__init__(app)
         self.cache_timeout = cache_timeout
@@ -290,11 +288,11 @@ class CacheMiddleware(BaseMiddleware):
 
     def register_handler(self, path: str, expires: int) -> None:
         """
-        Зарегистрировать хендлер для кеширования.
+        Register a handler for caching.
 
         Args:
-            path: Путь хендлера
-            expires: Время жизни кеша в секундах
+            path: Handler path
+            expires: Cache lifetime in seconds
         """
         self._cached_handlers[path] = expires
 
@@ -302,18 +300,18 @@ class CacheMiddleware(BaseMiddleware):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        # Проверяем, есть ли хендлер в списке кешируемых
+        # Check if handler is in the list of cached handlers
         path = scope.get("path", "/")
         method = scope.get("method", "GET")
 
-        # Кешируем только GET запросы
+        # Cache only GET requests
         if method != "GET":
             return await self.app(scope, receive, send)
 
-        # Проверяем точное совпадение пути
+        # Check exact path match
         expires = self._cached_handlers.get(path)
 
-        # Если нет точного совпадения, проверяем паттерны
+        # If no exact match, check patterns
         if expires is None:
             for handler_path, handler_expires in self._cached_handlers.items():
                 if self._match_path(path, handler_path):
@@ -321,17 +319,17 @@ class CacheMiddleware(BaseMiddleware):
                     break
 
         if expires is None:
-            # Хендлер не зарегистрирован для кеширования
+            # Handler not registered for caching
             return await self.app(scope, receive, send)
 
-        # Генерируем ключ кеша
+        # Generate cache key
         query_string = scope.get("query_string", b"").decode()
         cache_key = f"http:{path}:{query_string}"
 
-        # Пробуем получить из кеша
+        # Try to get from cache
         cached_response = await self.backend.get(cache_key)
         if cached_response is not None:
-            # Отправляем кешированный ответ
+            # Send cached response
             await send({
                 "type": "http.response.start",
                 "status": cached_response["status"],
@@ -344,7 +342,7 @@ class CacheMiddleware(BaseMiddleware):
             })
             return
 
-        # Перехватываем ответ
+        # Intercept response
         response_data = {
             "status": None,
             "headers": [],
@@ -357,7 +355,7 @@ class CacheMiddleware(BaseMiddleware):
                 response_data["headers"] = message["headers"]
             elif message["type"] == "http.response.body":
                 response_data["body"] = message.get("body", b"")
-                # Если это последний блок, сохраняем в кеш
+                # If this is the last block, save to cache
                 if not message.get("more_body", False):
                     await self.backend.set(cache_key, response_data, expires=expires)
 
@@ -365,9 +363,9 @@ class CacheMiddleware(BaseMiddleware):
 
     def _match_path(self, path: str, pattern: str) -> bool:
         """
-        Проверить соответствие пути паттерну.
+        Check if path matches pattern.
 
-        Поддерживает простые паттерны с параметрами:
+        Supports simple patterns with parameters:
         - /api/users/{id:int}
         - /api/items/{name:str}
         """

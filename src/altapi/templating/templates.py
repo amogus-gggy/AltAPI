@@ -1,23 +1,22 @@
 """
-Модуль для работы с шаблонами Jinja2.
+Module for working with Jinja2 templates.
 """
 import os
 from typing import Any, Dict, Optional, Union
-from pathlib import Path
 
 from ..http.responses import HTMLResponse
 
 
-# Глобальная переменная для хранения templates_directory по умолчанию
+# Global variable for storing default templates_directory
 _default_templates_directory: Union[str, os.PathLike] = "templates"
 
 
 def set_default_templates_directory(directory: Union[str, os.PathLike]) -> None:
     """
-    Устанавливает директорию шаблонов по умолчанию для функции render_template.
+    Set the default templates directory for the render_template function.
 
     Args:
-        directory: Путь к директории с шаблонами
+        directory: Path to the templates directory
     """
     global _default_templates_directory
     _default_templates_directory = str(directory)
@@ -25,33 +24,33 @@ def set_default_templates_directory(directory: Union[str, os.PathLike]) -> None:
 
 def get_default_templates_directory() -> str:
     """
-    Возвращает директорию шаблонов по умолчанию.
+    Return the default templates directory.
 
     Returns:
-        Путь к директории с шаблонами
+        Path to the templates directory
     """
     return _default_templates_directory
 
 
 class Jinja2Templates:
     """
-    Класс для управления шаблонами Jinja2.
-    
-    Пример использования:
+    Class for managing Jinja2 templates.
+
+    Example usage:
         templates = Jinja2Templates(directory="templates")
-        
+
         @app.get("/")
         async def home(request):
             return templates.TemplateResponse("index.html", {"request": request, "title": "Home"})
     """
-    
+
     def __init__(self, directory: Union[str, os.PathLike], **env_options):
         """
-        Инициализация шаблонов Jinja2.
-        
+        Initialize Jinja2 templates.
+
         Args:
-            directory: Путь к директории с шаблонами
-            **env_options: Дополнительные параметры для Jinja2 Environment
+            directory: Path to the templates directory
+            **env_options: Additional options for Jinja2 Environment
         """
         try:
             from jinja2 import Environment, FileSystemLoader
@@ -78,16 +77,16 @@ class Jinja2Templates:
         headers: Optional[Dict[str, str]] = None,
     ) -> "TemplateResponse":
         """
-        Рендерит шаблон и возвращает TemplateResponse.
-        
+        Render a template and return a TemplateResponse.
+
         Args:
-            name: Имя файла шаблона
-            context: Контекст для рендеринга
-            status_code: HTTP статус код
-            headers: HTTP заголовки
-            
+            name: Template file name
+            context: Context for rendering
+            status_code: HTTP status code
+            headers: HTTP headers
+
         Returns:
-            TemplateResponse объект
+            TemplateResponse object
         """
         return TemplateResponse(
             name=name,
@@ -100,7 +99,7 @@ class Jinja2Templates:
 
 class TemplateResponse(HTMLResponse):
     """
-    Ответ с отрендеренным HTML-шаблоном.
+    Response with a rendered HTML template.
     """
 
     def __init__(
@@ -115,7 +114,7 @@ class TemplateResponse(HTMLResponse):
         self.context = context or {}
         self.templates = templates
 
-        # Рендерим шаблон
+        # Render the template
         template = templates.env.get_template(name)
         content = template.render(**self.context)
 
@@ -133,18 +132,18 @@ def render_template(
     **jinja_options: Any,
 ) -> HTMLResponse:
     """
-    Функция для рендеринга шаблона Jinja2.
+    Function for rendering a Jinja2 template.
 
     Args:
-        template_name: Имя файла шаблона
-        context: Контекст для рендеринга
-        templates_directory: Путь к директории с шаблонами (по умолчанию используется глобальная настройка)
-        **jinja_options: Дополнительные параметры для Jinja2
+        template_name: Template file name
+        context: Context for rendering
+        templates_directory: Path to templates directory (uses global setting by default)
+        **jinja_options: Additional options for Jinja2
 
     Returns:
-        HTMLResponse с отрендеренным шаблоном
+        HTMLResponse with the rendered template
 
-    Пример:
+    Example:
         @app.get("/")
         async def home(request):
             return render_template("index.html", {"title": "Home"})
@@ -152,9 +151,9 @@ def render_template(
     try:
         from jinja2 import Environment, FileSystemLoader
     except ImportError:
-        raise ImportError("Jinja2 не установлен. Установите: pip install jinja2")
+        raise ImportError("Jinja2 is not installed. Install with: pip install jinja2")
 
-    # Используем переданную директорию или директорию по умолчанию
+    # Use the provided directory or the default directory
     if templates_directory is None:
         templates_directory = get_default_templates_directory()
 

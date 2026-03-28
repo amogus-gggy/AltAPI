@@ -1,12 +1,10 @@
 import ujson
 import os
-import stat
-import typing
-from typing import Any, Dict, List, Optional, Union, AsyncIterator, Callable
+from typing import Dict, List, Optional, Union, AsyncIterator, Callable
 
 import anyio
 
-# Предварительно закодированные заголовки для часто используемых media types
+# Pre-encoded headers for commonly used media types
 _PRE_ENCODED_MEDIA_TYPES = {
     "application/json": [(b"content-type", b"application/json")],
     "text/plain; charset=utf-8": [(b"content-type", b"text/plain; charset=utf-8")],
@@ -18,7 +16,7 @@ class _HeadersMixin:
     """Mixin for encoding HTTP headers."""
 
     def _encode_headers(self, media_type: str, headers: dict) -> List[tuple]:
-        # Используем предзакодированные заголовки если возможно
+        # Use pre-encoded headers if possible
         if not headers and media_type in _PRE_ENCODED_MEDIA_TYPES:
             return _PRE_ENCODED_MEDIA_TYPES[media_type]
 
@@ -36,11 +34,11 @@ class Response(_HeadersMixin):
         self.media_type = media_type
         self._encoded_headers: Optional[List[tuple]] = None
         self._encoded_body: Optional[bytes] = None
-        # Предварительно кодируем тело если это bytes или str
+        # Pre-encode body if it's bytes or str
         if isinstance(content, bytes):
             self._encoded_body = content
         elif isinstance(content, str):
-            # UTF-8 для текста, latin-1 для совместимости
+            # UTF-8 for text, latin-1 for compatibility
             self._encoded_body = content.encode('utf-8')
 
     async def __call__(self, scope, receive, send):
@@ -53,7 +51,7 @@ class Response(_HeadersMixin):
         await send({
             "type": "http.response.body",
             "body": self._get_encoded_body(),
-            "more_body": False,  # КРИТИЧНО для ASGI
+            "more_body": False,  # CRITICAL for ASGI
         })
 
     def _get_encoded_headers(self):
@@ -69,7 +67,7 @@ class Response(_HeadersMixin):
 
 class JSONResponse(Response):
     def __init__(self, content, status_code=200, headers=None):
-        # Сериализуем в JSON и сразу кодируем в bytes (JSON всегда ASCII-safe)
+        # Serialize to JSON and immediately encode to bytes (JSON is always ASCII-safe)
         json_bytes = ujson.dumps(content).encode('latin-1')
         super().__init__(
             json_bytes,
@@ -91,7 +89,7 @@ class HTMLResponse(Response):
 
 
 class PlainTextResponse(Response):
-    """Ответ с обычным текстом (text/plain)."""
+    """Response with plain text (text/plain)."""
 
     def __init__(self, content, status_code=200, headers=None):
         super().__init__(
@@ -103,7 +101,7 @@ class PlainTextResponse(Response):
 
 
 class RedirectResponse(Response):
-    """Перенаправление на другой URL."""
+    """Redirect to another URL."""
 
     def __init__(self, url, status_code=307, headers=None):
         headers = headers or {}
@@ -117,7 +115,7 @@ class RedirectResponse(Response):
 
 
 class StreamingResponse(_HeadersMixin):
-    """Потоковый ответ для передачи данных частями."""
+    """Streaming response for sending data in chunks."""
 
     def __init__(
             self,
@@ -166,7 +164,7 @@ class StreamingResponse(_HeadersMixin):
 
 
 class FileResponse(Response):
-    """Ответ с содержимым файла (с поддержкой range-запросов)."""
+    """Response with file content (with support for range requests)."""
     chunk_size = 64 * 1024
 
     def __init__(
@@ -219,18 +217,18 @@ class FileResponse(Response):
         try:
             stat_result = await anyio.to_thread.run_sync(os.stat, self.path)
         except FileNotFoundError:
-            # Файл не найден - возвращаем 404
+            # File not found - return 404
             response = PlainTextResponse("Not Found", status_code=404)
             return await response(scope, receive, send)
         except PermissionError:
-            # Нет доступа - возвращаем 403
+            # Access denied - return 403
             response = PlainTextResponse("Forbidden", status_code=403)
             return await response(scope, receive, send)
 
         file_size = stat_result.st_size
         last_modified = stat_result.st_mtime
 
-        # Парсинг Range заголовка
+        # Parse Range header
         start = 0
         end = None
         range_header = None
@@ -242,31 +240,31 @@ class FileResponse(Response):
 
         if range_header and range_header.startswith("bytes="):
             try:
-                range_val = range_header[6:]  # убираем "bytes="
+                range_val = range_header[6:]  # Remove "bytes="
                 start_str, end_str = range_val.split("-", 1)
                 start = int(start_str) if start_str else 0
                 end = int(end_str) if end_str else file_size - 1
-                # Нормализуем end
+                # Normalize end
                 if end >= file_size:
                     end = file_size - 1
                 if start > end:
-                    # Невалидный диапазон - игнорируем
+                    # Invalid range - ignore
                     start = 0
                     end = None
                 else:
                     self.status_code = 206
             except (ValueError, IndexError):
-                # Невалидный Range - игнорируем
+                # Invalid Range - ignore
                 pass
 
-        # Формируем заголовки
+        # Build headers
         headers = dict(self.headers)
         headers["content-type"] = self._media_type
         headers["content-disposition"] = f'attachment; filename="{self.filename}"'
         headers["accept-ranges"] = "bytes"
         headers["last-modified"] = email.utils.formatdate(last_modified, usegmt=True)
 
-        # Вычисляем длину контента
+        # Calculate content length
         if end is not None:
             content_length = end - start + 1
             headers["content-range"] = f"bytes {start}-{end}/{file_size}"
@@ -283,7 +281,7 @@ class FileResponse(Response):
             "headers": encoded_headers,
         })
 
-        # Читаем и отправляем файл
+        # Read and send the file
         try:
             async with await anyio.open_file(self.path, "rb") as f:
                 if start > 0:
@@ -302,7 +300,7 @@ class FileResponse(Response):
                     })
                     remaining -= len(chunk)
         except (FileNotFoundError, PermissionError):
-            # Файл был удалён или доступ запрещён во время чтения
+            # File was deleted or access denied during read
             pass
 
         await send({

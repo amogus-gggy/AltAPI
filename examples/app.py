@@ -9,7 +9,6 @@ from altapi.http import (
     HTMLResponse,
     PlainTextResponse,
     StreamingResponse,
-    FileResponse,
     RedirectResponse,
 )
 from altapi.websocket import WebSocket
