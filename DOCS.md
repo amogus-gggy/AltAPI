@@ -890,9 +890,32 @@ if __name__ == "__main__":
 
 ### Parameters
 
-- `host` — Host to bind (default: "0.0.0.0")
-- `port` — Port to bind (default: 8000)
-- `gc_optimize` — Optimize garbage collector settings (default: True)
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `host` | `str` | Host to bind | `"0.0.0.0"` |
+| `port` | `int` | Port to bind | `8000` |
+| `workers` | `int` | Number of worker processes | `1` |
+| `gc_optimize` | `bool` | Optimize garbage collector settings | `True` |
+| `access_log` | `bool` | Enable request logging | `True` |
+
+### Multi-Process Mode
+
+To run the server with multiple worker processes:
+
+```python
+if __name__ == "__main__":
+  app.run(host="0.0.0.0", port=8000, workers=4)
+```
+
+**Note:** When using `workers > 1`, the application file must be run as a module (not in REPL or interactive mode).
+
+### Using uvicorn Directly
+
+```python
+if __name__ == "__main__":
+  import uvicorn
+  uvicorn.run("myapp:app", host="0.0.0.0", port=8000, workers=4)
+```
 
 ---
 

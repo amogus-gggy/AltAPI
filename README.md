@@ -2,6 +2,19 @@
 
 A simple and fast ASGI microframework for Python with WebSocket support.
 
+## Changelog
+
+### v1.2.0
+- Added `workers` parameter to `app.run()` for multi-process support(still unstable sometimes)
+- Added `access_log` parameter to enable/disable request logging
+- GC optimizations now apply to all workers automatically
+
+
+
+## Documentation
+
+📖 Full documentation is available in **[DOCS.md](DOCS.md)**.
+
 ## Installation
 
 ```bash

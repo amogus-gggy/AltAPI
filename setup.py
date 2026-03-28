@@ -17,9 +17,9 @@ extensions = [
 
 setup(
     name="altapi",
-    version="1.1",
-    author="vxiddev, amogus-gggy",
-    description="Simple ASGI micro framework for Python",
+    version="1.2",
+    author="amogus-gggy",
+    description="A simple and fast ASGI microframework for Python with WebSocket support.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/amogus-gggy/AltAPI",
