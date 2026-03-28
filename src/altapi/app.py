@@ -4,6 +4,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from .http.responses import HTMLResponse
 
@@ -19,7 +20,48 @@ from .caching.cache import CacheMiddleware, CacheManager, InMemoryCache, cache a
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
 
+def _run_gc_optimize():
+    """
+    Garbage collector optimization.
+    
+    Applies the following optimizations:
+    - Forced garbage collection
+    - Object freezing
+    - Increased GC thresholds
+    """
+    import gc
+    gc.collect(2)
+    gc.freeze()
+    allocs, gen1, gen2 = gc.get_threshold()
+    allocs = 50000
+    gen1 = gen1 * 2
+    gen2 = gen2 * 2
+    gc.set_threshold(allocs, gen1, gen2)
+
+
+async def _lifespan(app):
+    """
+    Common lifespan for all AltAPI instances with GC optimization.
+    
+    Called on each worker startup.
+    """
+    _run_gc_optimize()
+    yield
+
+
 class AltAPI:
+    """
+    Main AltAPI application class.
+    
+    ASGI framework for building web applications with support for:
+    - HTTP routes (GET, POST, PUT, DELETE)
+    - WebSocket connections
+    - Middleware
+    - Jinja2 templates
+    - Static files
+    - Caching
+    """
+    
     def __init__(
         self,
         middleware: List[Middleware] = None,
@@ -28,6 +70,16 @@ class AltAPI:
         cache_backend: Optional[CacheBackend] = None,
         cache_timeout: int = 300,
     ):
+        """
+        Initialize AltAPI application.
+
+        Args:
+            middleware: List of middleware for the application
+            templates_directory: Directory with Jinja2 templates
+            static_directory: Directory with static files (optional)
+            cache_backend: Cache backend (optional)
+            cache_timeout: Default cache lifetime in seconds
+        """
         self._router = Router()
         self._middlewares = middleware or []
         self._mounted_apps: Dict[str, Any] = {}
@@ -37,45 +89,55 @@ class AltAPI:
         self._app = self._build_middlewares(self._core)
         self._sync_executor = _sync_executor
 
-        # Инициализация шаблонов Jinja2
+        # Initialize Jinja2 templates
         self._templates_directory = str(templates_directory)
         self._templates = Jinja2Templates(self._templates_directory)
 
-        # Устанавливаем глобальную директорию шаблонов для render_template
+        # Set global templates directory for render_template
         set_default_templates_directory(self._templates_directory)
 
-        # Инициализация статической директории (если указана)
+        # Initialize static directory (if specified)
         if static_directory is not None:
             self._static_directory = str(static_directory)
             self.mount("/static", directory=self._static_directory)
         else:
             self._static_directory = None
 
-        # Инициализация кеширования (если указан бекенд)
+        # Initialize caching (if backend specified)
         self._cache_backend = cache_backend
         if cache_backend is not None:
-            # Устанавливаем как бекенд по умолчанию
+            # Set as default backend
             CacheManager.set_default_backend(cache_backend)
-            # Добавляем CacheMiddleware автоматически
+            # Add CacheMiddleware automatically
             self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
         self._cache_timeout = cache_timeout
 
     @property
     def templates(self) -> Jinja2Templates:
-        """Возвращает объект Jinja2Templates для рендеринга шаблонов."""
+        """Return Jinja2Templates object for template rendering."""
         return self._templates
 
     @property
     def static_directory(self) -> Optional[str]:
-        """Возвращает путь к директории статических файлов (если настроена)."""
+        """Return path to static files directory (if configured)."""
         return self._static_directory
 
     @property
     def cache_backend(self) -> Optional[CacheBackend]:
-        """Возвращает бекенд кеширования (если настроен)."""
+        """Return cache backend (if configured)."""
         return self._cache_backend
 
     def route(self, path, methods=None):
+        """
+        Decorator for registering HTTP routes.
+
+        Args:
+            path: Route path
+            methods: List of HTTP methods (default ["GET"])
+
+        Returns:
+            Decorator for registering handler function
+        """
         methods = methods or ["GET"]
 
         def decorator(func):
@@ -86,18 +148,48 @@ class AltAPI:
         return decorator
 
     def get(self, path):
+        """
+        Decorator for registering GET routes.
+
+        Args:
+            path: Route path
+        """
         return self.route(path, ["GET"])
 
     def post(self, path):
+        """
+        Decorator for registering POST routes.
+
+        Args:
+            path: Route path
+        """
         return self.route(path, ["POST"])
 
     def put(self, path):
+        """
+        Decorator for registering PUT routes.
+
+        Args:
+            path: Route path
+        """
         return self.route(path, ["PUT"])
 
     def delete(self, path):
+        """
+        Decorator for registering DELETE routes.
+
+        Args:
+            path: Route path
+        """
         return self.route(path, ["DELETE"])
 
     def websocket(self, path):
+        """
+        Decorator for registering WebSocket routes.
+
+        Args:
+            path: Route path for WebSocket connections
+        """
         def decorator(func):
             self._router.add_websocket_route(path, func)
             return func
@@ -106,79 +198,109 @@ class AltAPI:
 
     def cache(self, path: str, expires: int = 300):
         """
-        Зарегистрировать маршрут для кеширования.
+        Register a route for caching.
 
         Args:
-            path: Путь маршрута
-            expires: Время жизни кеша в секундах
+            path: Route path
+            expires: Cache lifetime in seconds
 
-        Пример:
+        Example:
             app.cache("/api/data", expires=3600)
 
             @app.get("/api/data")
             async def get_data(request):
                 return JSONResponse({"data": "cached"})
         """
-        # Находим CacheMiddleware и регистрируем хендлер
+        # Find CacheMiddleware and register handler
         for mw in self._middlewares:
             if mw.middleware_cls == CacheMiddleware:
-                # Получаем экземпляр middleware после build
+                # Get middleware instance after build
                 pass
 
-        # Сохраняем в отдельный список для последующей регистрации
+        # Store for later registration
         if not hasattr(self, "_cache_routes"):
             self._cache_routes = []
         self._cache_routes.append((path, expires))
 
         def decorator(func):
-            # Добавляем маршрут как обычно
+            # Add route as usual
             for m in ["GET"]:
                 self._router.add_route(path, m.upper(), func)
 
-            # Оборачиваем функцию в кеш
+            # Wrap function in cache
             return cache_decorator(expires=expires)(func)
 
         return decorator
 
     def mount(self, path: str, app: Any = None, directory: Union[str, os.PathLike] = None):
         """
-        Подключить внешнее ASGI-приложение или директорию со статическими файлами.
-        
+        Mount an external ASGI application or static files directory.
+
         Args:
-            path: Префикс пути (например, "/static" или "/api")
-            app: ASGI-приложение для монтирования
-            directory: Путь к директории со статическими файлами
+            path: Path prefix (e.g., "/static" or "/api")
+            app: ASGI application to mount
+            directory: Path to static files directory
         """
         if app is not None:
             self._mounted_apps[path] = app
         elif directory is not None:
             self._static_dirs[path] = str(directory)
 
-    def run(self, host: str = "0.0.0.0", port: int = 8000, gc_optimize=True):
+    def run(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8000,
+        workers: int = 1,
+        gc_optimize: bool = True,
+        access_log: bool = True,
+    ):
         """
-        Запустить сервер uvicorn.
+        Run uvicorn server.
 
         Args:
-            host: Хост для прослушивания
-            port: Порт для прослушивания
-            gc_optimize: оптимизировать ли garbage collector
+            host: Host to listen on
+            port: Port to listen on
+            workers: Number of worker processes
+            gc_optimize: Whether to optimize garbage collector
+            access_log: Whether to enable request logging
         """
-
-        if gc_optimize:
-            import gc
-            gc.collect(2)
-            gc.freeze()
-            allocs, gen1, gen2 = gc.get_threshold()
-            #print(allocs, gen1, gen2)
-            allocs = 50000
-            gen1 = gen1 * 2
-            gen2 = gen2 * 2
-            gc.set_threshold(allocs, gen1, gen2)
+        import sys
         import uvicorn
-        #TODO: add access log disabling
-        uvicorn.run(self, host=host, port=port, http="httptools")
+
+        # Generate import string for workers support
+        if workers > 1:
+            main_module = sys.modules.get("__main__")
+            if main_module and hasattr(main_module, "__file__") and main_module.__file__:
+                # Get absolute path to file
+                file_path = os.path.realpath(os.path.abspath(main_module.__file__))
+                module_name = os.path.splitext(os.path.basename(file_path))[0]
+
+                # If this is __main__.py in a package
+                if module_name == "__main__":
+                    # Package name is the directory name
+                    package_name = os.path.basename(os.path.dirname(file_path))
+                    app_str = f"{package_name}:app"
+                else:
+                    # Regular module - use filename without extension
+                    app_str = f"{module_name}:app"
+            else:
+                app_str = "app:app"
+        else:
+            app_str = self
+
+        uvicorn.run(
+            app_str,
+            host=host,
+            port=port,
+            workers=workers,
+            access_log=access_log,
+            http="httptools",
+        )
 
     def _build_core(self):
+        # Apply GC optimizations when creating the app (for each worker)
+        _run_gc_optimize()
+
         async def app(scope, receive, send):
             if scope["type"] == "http":
                 return await self._handle_http(scope, receive, send)
@@ -191,11 +313,11 @@ class AltAPI:
         for mw in reversed(self._middlewares):
             app = mw.build(app)
 
-        # Регистрируем cache routes после создания middleware
+        # Register cache routes after creating middleware
         if hasattr(self, "_cache_routes"):
             for mw in self._middlewares:
                 if mw.middleware_cls == CacheMiddleware:
-                    # Получаем экземпляр middleware
+                    # Get middleware instance
                     middleware_instance = mw.build(app)
                     for path, expires in self._cache_routes:
                         middleware_instance.register_handler(path, expires)
@@ -207,20 +329,20 @@ class AltAPI:
         path = scope.get("path", "/")
         method = scope.get("method", "GET")
 
-        # Проверка смонтированных приложений
+        # Check mounted applications
         for mount_path, mounted_app in self._mounted_apps.items():
             if path.startswith(mount_path):
                 new_scope = dict(scope)  # shallow copy to avoid mutation
                 new_scope["path"] = path[len(mount_path):] or "/"
                 return await mounted_app(new_scope, receive, send)
 
-        # Проверка статических директорий
+        # Check static directories
         for mount_path, directory in self._static_dirs.items():
             if path.startswith(mount_path):
                 relative_path = path[len(mount_path):].lstrip("/")
                 file_path = os.path.join(directory, relative_path)
 
-                # Защита от выхода за пределы директории (используем realpath для разрешения symlink)
+                # Protect against directory traversal (use realpath for symlink resolution)
                 abs_directory = os.path.realpath(directory)
                 abs_file = os.path.realpath(file_path)
 
