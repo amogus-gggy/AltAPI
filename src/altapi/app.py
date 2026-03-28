@@ -169,7 +169,7 @@ class AltAPI:
             gc.collect(2)
             gc.freeze()
             allocs, gen1, gen2 = gc.get_threshold()
-            print(allocs, gen1, gen2)
+            #print(allocs, gen1, gen2)
             allocs = 50000
             gen1 = gen1 * 2
             gen2 = gen2 * 2
