@@ -3,9 +3,9 @@
 """
 import asyncio
 
-from nebula import Nebula
-from nebula.http import JSONResponse
-from nebula.caching import cache, InMemoryCache
+from altapi import Nebula
+from altapi.http import JSONResponse
+from altapi.caching import cache, InMemoryCache
 import time
 
 # Создаём app с кешем - просто указываем бекенд!

@@ -9,8 +9,8 @@ if struct.calcsize("P") * 8 != 64:
 
 extensions = [
     Extension(
-        "nebula.router",
-        ["src/nebula/router.pyx"],
+        "altapi.router",
+        ["src/altapi/router.pyx"],
     ),
 ]
 

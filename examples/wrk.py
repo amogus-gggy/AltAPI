@@ -1,4 +1,4 @@
-from nebula import (
+from altapi import (
     Nebula,
     JSONResponse
 )

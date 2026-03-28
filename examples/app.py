@@ -3,8 +3,8 @@ Nebula Full Example Application
 
 Demonstrates all major features.
 """
-from nebula import Nebula
-from nebula.http import (
+from altapi import Nebula
+from altapi.http import (
     JSONResponse,
     HTMLResponse,
     PlainTextResponse,
@@ -12,9 +12,9 @@ from nebula.http import (
     FileResponse,
     RedirectResponse,
 )
-from nebula.websocket import WebSocket
-from nebula.templating import Jinja2Templates
-from nebula.caching import InMemoryCache, cache
+from altapi.websocket import WebSocket
+from altapi.templating import Jinja2Templates
+from altapi.caching import InMemoryCache, cache
 import random
 import os
 

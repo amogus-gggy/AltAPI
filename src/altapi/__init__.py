@@ -33,29 +33,29 @@ from .caching import (
 
 # Mapping of attribute names to their correct import paths and actual objects
 _IMPORT_MAPPING = {
-    "Request": ("nebula.http", _Request),
-    "Response": ("nebula.http", _Response),
-    "JSONResponse": ("nebula.http", _JSONResponse),
-    "HTMLResponse": ("nebula.http", _HTMLResponse),
-    "PlainTextResponse": ("nebula.http", _PlainTextResponse),
-    "StreamingResponse": ("nebula.http", _StreamingResponse),
-    "FileResponse": ("nebula.http", _FileResponse),
-    "RedirectResponse": ("nebula.http", _RedirectResponse),
-    "BaseMiddleware": ("nebula.middleware", _BaseMiddleware),
-    "Middleware": ("nebula.middleware", _Middleware),
-    "ASGIApp": ("nebula.middleware", _ASGIApp),
-    "WebSocket": ("nebula.websocket", _WebSocket),
-    "WebSocketState": ("nebula.websocket", _WebSocketState),
-    "Jinja2Templates": ("nebula.templating", _Jinja2Templates),
-    "TemplateResponse": ("nebula.templating", _TemplateResponse),
-    "render_template": ("nebula.templating", _render_template),
-    "set_default_templates_directory": ("nebula.templating", _set_default_templates_directory),
-    "get_default_templates_directory": ("nebula.templating", _get_default_templates_directory),
-    "CacheBackend": ("nebula.caching", _CacheBackend),
-    "InMemoryCache": ("nebula.caching", _InMemoryCache),
-    "CacheManager": ("nebula.caching", _CacheManager),
-    "CacheMiddleware": ("nebula.caching", _CacheMiddleware),
-    "cache": ("nebula.caching", _cache),
+    "Request": ("altapi.http", _Request),
+    "Response": ("altapi.http", _Response),
+    "JSONResponse": ("altapi.http", _JSONResponse),
+    "HTMLResponse": ("altapi.http", _HTMLResponse),
+    "PlainTextResponse": ("altapi.http", _PlainTextResponse),
+    "StreamingResponse": ("altapi.http", _StreamingResponse),
+    "FileResponse": ("altapi.http", _FileResponse),
+    "RedirectResponse": ("altapi.http", _RedirectResponse),
+    "BaseMiddleware": ("altapi.middleware", _BaseMiddleware),
+    "Middleware": ("altapi.middleware", _Middleware),
+    "ASGIApp": ("altapi.middleware", _ASGIApp),
+    "WebSocket": ("altapi.websocket", _WebSocket),
+    "WebSocketState": ("altapi.websocket", _WebSocketState),
+    "Jinja2Templates": ("altapi.templating", _Jinja2Templates),
+    "TemplateResponse": ("altapi.templating", _TemplateResponse),
+    "render_template": ("altapi.templating", _render_template),
+    "set_default_templates_directory": ("altapi.templating", _set_default_templates_directory),
+    "get_default_templates_directory": ("altapi.templating", _get_default_templates_directory),
+    "CacheBackend": ("altapi.caching", _CacheBackend),
+    "InMemoryCache": ("altapi.caching", _InMemoryCache),
+    "CacheManager": ("altapi.caching", _CacheManager),
+    "CacheMiddleware": ("altapi.caching", _CacheMiddleware),
+    "cache": ("altapi.caching", _cache),
 }
 
 
@@ -63,7 +63,7 @@ def __getattr__(name: str) -> Any:
     if name in _IMPORT_MAPPING:
         module_path, obj = _IMPORT_MAPPING[name]
         warnings.warn(
-            f"Importing '{name}' directly from 'nebula' is deprecated. "
+            f"Importing '{name}' directly from 'altapi' is deprecated. "
             f"Use 'from {module_path} import {name}' instead.",
             DeprecationWarning,
             stacklevel=2,
@@ -73,7 +73,7 @@ def __getattr__(name: str) -> Any:
     if name == "__version__":
         return "0.1.0"
     
-    raise AttributeError(f"module 'nebula' has no attribute '{name}'")
+    raise AttributeError(f"module 'altapi' has no attribute '{name}'")
 
 
 __all__ = [

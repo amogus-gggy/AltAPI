@@ -3,10 +3,10 @@ Basic Nebula Example with Middleware and Templates
 
 Demonstrates middleware and templating.
 """
-from nebula import Nebula
-from nebula.http import HTMLResponse
-from nebula.middleware import Middleware, BaseMiddleware
-from nebula.templating import render_template, TemplateResponse
+from altapi import Nebula
+from altapi.http import HTMLResponse
+from altapi.middleware import Middleware, BaseMiddleware
+from altapi.templating import render_template, TemplateResponse
 from pathlib import Path
 import time
 

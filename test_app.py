@@ -2,7 +2,7 @@ import requests
 import sys
 import websockets
 
-from nebula.templating import DEFAULT_404_BODY
+from altapi.templating import DEFAULT_404_BODY
 
 import asyncio
 
