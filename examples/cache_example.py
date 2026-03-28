@@ -1,15 +1,15 @@
 """
-Пример использования кеширования в Nebula.
+Пример использования кеширования в AltAPI.
 """
 import asyncio
 
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse
 from altapi.caching import cache, InMemoryCache
 import time
 
 # Создаём app с кешем - просто указываем бекенд!
-app = Nebula(
+app = AltAPI(
     cache_backend=InMemoryCache(max_size=500),
     cache_timeout=300
 )
@@ -18,7 +18,7 @@ app = Nebula(
 @app.get("/")
 async def home(request):
     return JSONResponse({
-        "message": "Welcome to Nebula Caching Example",
+        "message": "Welcome to AltAPI Caching Example",
         "endpoints": [
             "/api/expensive - Expensive operation (cached)",
         ]
@@ -43,6 +43,6 @@ async def expensive_operation(request):
 
 
 if __name__ == "__main__":
-    print("Starting Nebula with caching example...")
+    print("Starting AltAPI with caching example...")
     print("Visit http://localhost:8000 for available endpoints")
     app.run(host="0.0.0.0", port=8000)

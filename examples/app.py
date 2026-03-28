@@ -1,9 +1,9 @@
 """
-Nebula Full Example Application
+AltAPI Full Example Application
 
 Demonstrates all major features.
 """
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import (
     JSONResponse,
     HTMLResponse,
@@ -26,7 +26,7 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_dir, exist_ok=True)
 
 # Create app with templates, static directories and caching
-app = Nebula(
+app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
     cache_backend=InMemoryCache(max_size=1000),
@@ -39,7 +39,7 @@ templates = Jinja2Templates(directory=templates_dir)
 
 @app.get("/")
 async def home(request):
-    return HTMLResponse("<h1>Welcome to Nebula!</h1>")
+    return HTMLResponse("<h1>Welcome to AltAPI!</h1>")
 
 
 @app.get("/api/hello")
@@ -293,7 +293,7 @@ async def template_response(request):
     """Jinja2 template example."""
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "title": "Nebula Templates", "user": "Guest"}
+        {"request": request, "title": "AltAPI Templates", "user": "Guest"}
     )
 
 

@@ -1,9 +1,9 @@
 """
-Basic Nebula Example with Middleware and Templates
+Basic AltAPI Example with Middleware and Templates
 
 Demonstrates middleware and templating.
 """
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import HTMLResponse
 from altapi.middleware import Middleware, BaseMiddleware
 from altapi.templating import render_template, TemplateResponse
@@ -33,7 +33,7 @@ class TimingMiddleware(BaseMiddleware):
 templates_dir = Path(__file__).resolve().parent / "templates"
 static_dir = Path(__file__).resolve().parent / "static"
 
-app: Nebula = Nebula(
+app: AltAPI = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
     middleware=[

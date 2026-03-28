@@ -14,7 +14,7 @@ def test_home():
     """Test home page (HTML response)."""
     resp = requests.get(f"{BASE_URL}/")
     assert resp.status_code == 200
-    assert "Welcome to Nebula!" in resp.text
+    assert "Welcome to AltAPI!" in resp.text
     assert "text/html" in resp.headers["Content-Type"]
     print("✓ Home page OK")
 
@@ -140,7 +140,7 @@ def test_static_file():
     resp = requests.get(f"{BASE_URL}/static/style.css")
     assert resp.status_code == 200
     assert "text/css" in resp.headers["Content-Type"] or "text/plain" in resp.headers["Content-Type"]
-    assert "Nebula Static" in resp.text or "body" in resp.text
+    assert "AltAPI Static" in resp.text or "body" in resp.text
     print("✓ Static file OK")
 
 
@@ -155,7 +155,7 @@ def test_template_response():
     """Test Jinja2 template response."""
     resp = requests.get(f"{BASE_URL}/template")
     assert resp.status_code == 200
-    assert "Nebula Templates" in resp.text
+    assert "AltAPI Templates" in resp.text
     assert "text/html" in resp.headers["Content-Type"]
     assert "Logged in as: Guest" in resp.text
     print("✓ TemplateResponse OK")

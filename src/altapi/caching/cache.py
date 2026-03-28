@@ -264,7 +264,7 @@ class CacheMiddleware(BaseMiddleware):
     Middleware для автоматического кеширования HTTP-запросов.
 
     Пример использования:
-        app = Nebula(middleware=[
+        app = AltAPI(middleware=[
             Middleware(CacheMiddleware, cache_timeout=300)
         ])
 

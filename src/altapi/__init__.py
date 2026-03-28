@@ -2,7 +2,7 @@ import warnings
 from typing import Any
 
 # Import all with underscore prefix to hide them from direct access
-from .app import Nebula
+from .app import AltAPI
 from .http import Request as _Request
 from .http import (
     Response as _Response,
@@ -77,7 +77,7 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
-    "Nebula",
+    "AltAPI",
     "Request",
     "Response",
     "JSONResponse",

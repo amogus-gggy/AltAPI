@@ -19,7 +19,7 @@ from .caching.cache import CacheMiddleware, CacheManager, InMemoryCache, cache a
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
 
-class Nebula:
+class AltAPI:
     def __init__(
         self,
         middleware: List[Middleware] = None,

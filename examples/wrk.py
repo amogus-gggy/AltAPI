@@ -1,10 +1,10 @@
 from altapi import (
-    Nebula,
+    AltAPI,
     JSONResponse
 )
 
 
-app = Nebula()
+app = AltAPI()
 
 @app.get("/")
 async def bench(request):

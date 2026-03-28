@@ -88,10 +88,10 @@ Installs additional dependencies:
 ### Minimal Application
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.get("/")
@@ -122,9 +122,9 @@ uvicorn examples.app:app --reload
 Main application class.
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula(templates_directory="templates")
+app = AltAPI(templates_directory="templates")
 ```
 
 #### Constructor Parameters
@@ -397,11 +397,11 @@ backend = CacheManager.get_backend("redis")  # named
 Middleware for automatic HTTP response caching.
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.middleware import Middleware
 from altapi.caching import CacheMiddleware
 
-app = Nebula(middleware=[
+app = AltAPI(middleware=[
   Middleware(CacheMiddleware, cache_timeout=300)
 ])
 ```
@@ -444,10 +444,10 @@ async def get_data(request):
 ### Basic Routes
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse, HTMLResponse
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.get("/")
@@ -493,10 +493,10 @@ async def get_score(request: Request):
 ### Synchronous Handlers
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.get("/api/sync")
@@ -511,10 +511,10 @@ def sync_handler(request):
 ### Basic Example
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.websocket import WebSocket
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.websocket("/ws/echo")
@@ -528,10 +528,10 @@ async def websocket_echo(ws: WebSocket):
 ### WebSocket with Path Parameters
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.websocket import WebSocket
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.websocket("/ws/chat/{room:str}")
@@ -544,10 +544,10 @@ async def websocket_chat(ws: WebSocket):
 ### Iterating Over Messages
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.websocket import WebSocket
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.websocket("/ws/stream")
@@ -561,10 +561,10 @@ async def websocket_stream(ws: WebSocket):
 ### JSON Handling
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.websocket import WebSocket
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.websocket("/ws/json")
@@ -619,10 +619,10 @@ class TimingMiddleware(BaseMiddleware):
 to use it:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.middleware import Middleware
 
-app = Nebula(middleware=[
+app = AltAPI(middleware=[
   Middleware(TimingMiddleware)
 ])
 ```
@@ -638,10 +638,10 @@ AltAPI has built-in caching support with a flexible backend system.
 The simplest way to enable caching:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.caching import InMemoryCache, cache
 
-app = Nebula(
+app = AltAPI(
   cache_backend=InMemoryCache(max_size=1000),
   cache_timeout=300
 )
@@ -672,11 +672,11 @@ CacheManager.register_backend("redis", MyRedisCache())
 The simplest way to cache a function result:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse
 from altapi.caching import cache, InMemoryCache
 
-app = Nebula(cache_backend=InMemoryCache())
+app = AltAPI(cache_backend=InMemoryCache())
 
 
 @app.get("/api/data")
@@ -693,16 +693,16 @@ async def get_data(request):
 
 ### Using CacheMiddleware
 
-CacheMiddleware is automatically added when you specify `cache_backend` in `Nebula()`.
+CacheMiddleware is automatically added when you specify `cache_backend` in `AltAPI()`.
 
 For manual configuration:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.middleware import Middleware
 from altapi.caching import CacheMiddleware, InMemoryCache, cache
 
-app = Nebula(middleware=[
+app = AltAPI(middleware=[
   Middleware(CacheMiddleware, cache_timeout=300, backend=InMemoryCache())
 ])
 
@@ -718,10 +718,10 @@ async def get_user(request):
 Alternative way to register cached routes:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.caching import InMemoryCache
 
-app = Nebula(cache_backend=InMemoryCache(), cache_timeout=300)
+app = AltAPI(cache_backend=InMemoryCache(), cache_timeout=300)
 
 
 @app.cache("/api/data", expires=3600)
@@ -765,9 +765,9 @@ class RedisCache(CacheBackend):
 You can specify a static directory when creating the application. Files will be automatically served at `/static`:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula(static_directory="static")
+app = AltAPI(static_directory="static")
 
 # Files are automatically served at /static/<filepath>
 # e.g., /static/css/style.css, /static/js/app.js
@@ -776,9 +776,9 @@ app = Nebula(static_directory="static")
 ### Manual Mount Static Directory
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula()
+app = AltAPI()
 
 # Mount static files manually
 app.mount("/static", directory="static")
@@ -790,9 +790,9 @@ app.mount("/static", directory="static")
 ### Mount ASGI Application
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula()
+app = AltAPI()
 
 # Mount another ASGI app
 from some_module import sub_app
@@ -811,18 +811,18 @@ AltAPI supports Jinja2 templates for rendering HTML.
 You can specify the templates directory when creating the application:
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula(templates_directory="templates")
+app = AltAPI(templates_directory="templates")
 ```
 
 ### Using Jinja2Templates (Recommended)
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.templating import Jinja2Templates
 
-app = Nebula(templates_directory="templates")
+app = AltAPI(templates_directory="templates")
 templates = Jinja2Templates(directory="templates")
 
 
@@ -837,10 +837,10 @@ async def home(request):
 ### Using render_template Function
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.templating import render_template
 
-app = Nebula(templates_directory="templates")
+app = AltAPI(templates_directory="templates")
 
 
 @app.get("/")
@@ -874,9 +874,9 @@ async def home(request):
 ### Using app.run()
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.get("/")
@@ -901,11 +901,11 @@ if __name__ == "__main__":
 ### Full Application
 
 ```python
-from altapi import Nebula
+from altapi import AltAPI
 from altapi.http import JSONResponse, HTMLResponse
 from altapi.websocket import WebSocket
 
-app = Nebula()
+app = AltAPI()
 
 
 @app.get("/")
@@ -1008,15 +1008,16 @@ AltAPI/
 
 ### Recommended Imports (from subpackages)
 
-For better organization and to avoid deprecation warnings, import from subpackages (except Nebula):
+For better organization and to avoid deprecation warnings, import from subpackages (except AltAPI):
 
 ```python
 # Main application
-from altapi import Nebula
+from altapi import AltAPI
 
 # HTTP components
 from altapi.http import Request, Response, JSONResponse, HTMLResponse, PlainTextResponse, StreamingResponse,
-  FileResponse, RedirectResponse
+
+FileResponse, RedirectResponse
 
 # WebSocket
 from altapi.websocket import WebSocket, WebSocketState
