@@ -2,18 +2,18 @@
 
 A simple and fast ASGI microframework for Python with WebSocket support.
 
+[![Documentation](https://img.shields.io/badge/docs-DOCS.md-blue)](DOCS.md)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/fedor444/AltAPI)
+[![License](https://img.shields.io/badge/license-AGPLv3-green)](LICENSE.txt)
+
 ## Changelog
 
 ### v1.2.0
-- Added `workers` parameter to `app.run()` for multi-process support(still unstable sometimes)
+- Added `workers` parameter to `app.run()` for multi-process support (still unstable sometimes)
 - Added `access_log` parameter to enable/disable request logging
 - GC optimizations now apply to all workers automatically
 
 
-
-## Documentation
-
-📖 Full documentation is available in **[DOCS.md](DOCS.md)**.
 
 ## Installation
 
