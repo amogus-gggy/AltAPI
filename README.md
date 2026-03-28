@@ -2,7 +2,7 @@
 
 A simple and fast ASGI microframework for Python with WebSocket support.
 
-[![Documentation](https://img.shields.io/badge/docs-DOCS.md-blue)](DOCS.md)
+[![Documentation](https://img.shields.io/badge/docs-DOCS.md-blue)](https://github.com/amogus-gggy/AltAPI/blob/main/DOCS.md)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/fedor444/AltAPI)
 [![License](https://img.shields.io/badge/license-AGPLv3-green)](LICENSE.txt)
 
