@@ -1,6 +1,6 @@
 # AltAPI Documentation
 
-**AltAPI** — это простой и легковесный ASGI-микрофреймворк для Python с поддержкой WebSocket.
+**AltAPI** — is simple and powerfull framework for creating high-performance APIs.
 
 ## Table of Contents
 
@@ -69,6 +69,7 @@ pip install altapi
 - uvicorn >= 0.30.0
 - anyio >= 4.0.0
 - jinja2
+- ujson
 
 ### For Development
 
