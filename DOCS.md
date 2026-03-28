@@ -1,6 +1,6 @@
-# Nebula Documentation
+# AltAPI Documentation
 
-**Nebula** — это простой и легковесный ASGI-микрофреймворк для Python с поддержкой WebSocket.
+**AltAPI** — это простой и легковесный ASGI-микрофреймворк для Python с поддержкой WebSocket.
 
 ## Table of Contents
 
@@ -8,7 +8,7 @@
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
-  - [Nebula](#nebula)
+  - [AltAPI](#altapi)
   - [Request](#request)
   - [Response](#response)
     - [JSONResponse](#jsonresponse)
@@ -60,7 +60,7 @@
 ## Installation
 
 ```bash
-pip install project-altapi
+pip install altapi
 ```
 
 ### Requirements
@@ -73,7 +73,7 @@ pip install project-altapi
 ### For Development
 
 ```bash
-pip install project-altapi[dev]
+pip install altapi[dev]
 ```
 
 Installs additional dependencies:
@@ -117,7 +117,7 @@ uvicorn examples.app:app --reload
 
 ## API Reference
 
-### Nebula
+### AltAPI
 
 Main application class.
 
@@ -463,7 +463,7 @@ async def create_user(request):
 
 ### Typed Path Parameters
 
-Nebula supports automatic type conversion for path parameters:
+AltAPI supports automatic type conversion for path parameters:
 
 ```python
 from altapi.http import Request, JSONResponse
@@ -579,7 +579,7 @@ async def websocket_json(ws: WebSocket):
 
 ## Middleware
 
-Nebula has middleware support:
+AltAPI has middleware support:
 
 ```python
 from altapi.middleware import Middleware, BaseMiddleware
@@ -631,7 +631,7 @@ app = Nebula(middleware=[
 
 ## Caching
 
-Nebula has built-in caching support with a flexible backend system.
+AltAPI has built-in caching support with a flexible backend system.
 
 ### Quick Start
 
@@ -655,12 +655,12 @@ async def get_data(request):
 
 ### Cache Backends
 
-Nebula supports multiple cache backends. By default, it uses `InMemoryCache`.
+AltAPI supports multiple cache backends. By default, it uses `InMemoryCache`.
 
 ```python
 from altapi.caching import InMemoryCache, CacheManager
 
-# Set default cache backend (if not using cache_backend in Nebula)
+# Set default cache backend (if not using cache_backend in AltAPI)
 CacheManager.set_default_backend(InMemoryCache(max_size=1000))
 
 # Or register named backends
@@ -804,7 +804,7 @@ app.mount("/api", app=sub_app)
 
 ## Template Rendering
 
-Nebula supports Jinja2 templates for rendering HTML.
+AltAPI supports Jinja2 templates for rendering HTML.
 
 ### Configuring Templates Directory
 
@@ -865,7 +865,7 @@ async def home(request):
 </html>
 ```
 
-**Note:** Install Jinja2 with `pip install jinja2` or `pip install project-nebula[templates]`
+**Note:** Install Jinja2 with `pip install jinja2` or `pip install altapi[templates]`
 
 ---
 
@@ -910,7 +910,7 @@ app = Nebula()
 
 @app.get("/")
 async def home(request):
-  return HTMLResponse("<h1>Welcome to Nebula!</h1>")
+  return HTMLResponse("<h1>Welcome to AltAPI!</h1>")
 
 
 @app.get("/api/hello")
@@ -976,9 +976,9 @@ python test_app.py
 ### Project Structure
 
 ```
-Project-Nebula/
+AltAPI/
 ├── src/
-│   └── nebula/
+│   └── altapi/
 │       ├── __init__.py          # Main package exports
 │       ├── app.py               # Main application class
 │       ├── router.pyx           # Cython router
@@ -1033,7 +1033,7 @@ from altapi.middleware import Middleware, BaseMiddleware, ASGIApp
 
 ### Deprecated Imports (still supported but not recommended)
 
-Direct imports from `nebula` are deprecated but still work with a warning:
+Direct imports from `altapi` are deprecated but still work with a warning:
 
 ```python
 # Deprecated - will show DeprecationWarning
@@ -1066,7 +1066,7 @@ AGPLv3 License — see `LICENSE.txt` for details.
 
 ## Links
 
-- [GitHub Repository](https://github.com/amogus-gggy/project-nebula)
-- [PyPI Package](https://pypi.org/project/project-nebula/)
+- [GitHub Repository](https://github.com/amogus-gggy/altapi)
+- [PyPI Package](https://pypi.org/project/altapi/)
 
 ---
