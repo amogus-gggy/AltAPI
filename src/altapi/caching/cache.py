@@ -9,6 +9,13 @@ from functools import wraps
 
 from ..middleware.middleware import BaseMiddleware
 
+# Import shared storage support
+try:
+    from ..shared import SharedCacheBackend, ManagerConnection
+except ImportError:
+    SharedCacheBackend = None  # type: ignore
+    ManagerConnection = None  # type: ignore
+
 
 class CacheBackend(ABC):
     """
@@ -200,6 +207,9 @@ def cache(
     """
     Decorator for caching function results.
 
+    Works with CacheMiddleware for HTTP responses.
+    Registers the route for caching automatically.
+
     Args:
         expires: Cache lifetime in seconds
         key_prefix: Prefix for cache key
@@ -210,46 +220,18 @@ def cache(
         async def get_data(request):
             return JSONResponse({"data": "expensive computation"})
     """
-
+    import inspect
+    
     def decorator(func: Callable) -> Callable:
+        # Mark function for caching - will be registered by app when route is added
+        func._cache_expires = expires
+        
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # Get backend
-            if isinstance(backend, CacheBackend):
-                cache_backend = backend
-            else:
-                cache_backend = CacheManager.get_backend(backend)
-
-            # Generate cache key from arguments
-            request = None
-            for arg in args:
-                if hasattr(arg, "path"):  # Request-like object
-                    request = arg
-                    break
-
-            if request is not None:
-                cache_key = f"{key_prefix}{func.__name__}:{request.path}"
-            else:
-                # Use hash of arguments for functions without request
-                import hashlib
-
-                args_key = str(args) + str(sorted(kwargs.items()))
-                args_hash = hashlib.md5(args_key.encode()).hexdigest()[:8]
-                cache_key = f"{key_prefix}{func.__name__}:{args_hash}"
-
-            # Try to get from cache
-            cached = await cache_backend.get(cache_key)
-            if cached is not None:
-                return cached
-
-            # Call function
+            # Just call the function - caching is handled by CacheMiddleware
             result = func(*args, **kwargs)
             if asyncio.iscoroutine(result):
                 result = await result
-
-            # Save to cache
-            await cache_backend.set(cache_key, result, expires=expires)
-
             return result
 
         return wrapper
@@ -279,12 +261,19 @@ class CacheMiddleware(BaseMiddleware):
         Args:
             app: ASGI application
             cache_timeout: Default cache lifetime in seconds
-            backend: Backend for caching (default: InMemoryCache)
+            backend: Backend for caching (default: get from CacheManager)
         """
         super().__init__(app)
         self.cache_timeout = cache_timeout
-        self.backend = backend or CacheManager.get_default_backend()
+        self._backend = backend
         self._cached_handlers: Dict[str, int] = {}  # path -> expires
+
+    @property
+    def backend(self) -> CacheBackend:
+        """Get backend dynamically from CacheManager."""
+        if self._backend is not None:
+            return self._backend
+        return CacheManager.get_default_backend()
 
     def register_handler(self, path: str, expires: int) -> None:
         """
@@ -297,6 +286,8 @@ class CacheMiddleware(BaseMiddleware):
         self._cached_handlers[path] = expires
 
     async def __call__(self, scope, receive, send):
+        print(f"[CacheMiddleware] Request: {scope.get('path')} method={scope.get('method')}")
+        
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
@@ -306,30 +297,40 @@ class CacheMiddleware(BaseMiddleware):
 
         # Cache only GET requests
         if method != "GET":
+            print(f"[CacheMiddleware] Not a GET request, skipping cache")
             return await self.app(scope, receive, send)
 
         # Check exact path match
         expires = self._cached_handlers.get(path)
+        print(f"[CacheMiddleware] Cached handlers: {self._cached_handlers}")
+        print(f"[CacheMiddleware] Path {path} expires={expires}")
 
         # If no exact match, check patterns
         if expires is None:
             for handler_path, handler_expires in self._cached_handlers.items():
                 if self._match_path(path, handler_path):
                     expires = handler_expires
+                    print(f"[CacheMiddleware] Pattern match: {handler_path} -> {expires}")
                     break
 
         if expires is None:
             # Handler not registered for caching
+            print(f"[CacheMiddleware] Not a cached handler, passing through")
             return await self.app(scope, receive, send)
 
         # Generate cache key
         query_string = scope.get("query_string", b"").decode()
         cache_key = f"http:{path}:{query_string}"
+        print(f"[CacheMiddleware] Cache key: {cache_key}")
 
         # Try to get from cache
+        print(f"[CacheMiddleware] Getting from cache...")
         cached_response = await self.backend.get(cache_key)
+        print(f"[CacheMiddleware] Cache result: {cached_response is not None}")
+        
         if cached_response is not None:
             # Send cached response
+            print(f"[CacheMiddleware] Sending cached response!")
             await send({
                 "type": "http.response.start",
                 "status": cached_response["status"],
@@ -348,6 +349,7 @@ class CacheMiddleware(BaseMiddleware):
             "headers": [],
             "body": b"",
         }
+        print(f"[CacheMiddleware] Intercepting response...")
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
@@ -357,7 +359,11 @@ class CacheMiddleware(BaseMiddleware):
                 response_data["body"] = message.get("body", b"")
                 # If this is the last block, save to cache
                 if not message.get("more_body", False):
+                    print(f"[CacheMiddleware] Saving to cache: {cache_key} expires={expires}")
                     await self.backend.set(cache_key, response_data, expires=expires)
+            
+            # Always send the message
+            await send(message)
 
         await self.app(scope, receive, send_wrapper)
 

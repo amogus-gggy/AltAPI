@@ -28,7 +28,6 @@ os.makedirs(static_dir, exist_ok=True)
 app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
-    cache_backend=InMemoryCache(max_size=1000),
     cache_timeout=300
 )
 

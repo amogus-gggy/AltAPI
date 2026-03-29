@@ -29,6 +29,18 @@ from .caching import (
     CacheMiddleware as _CacheMiddleware,
     cache as _cache,
 )
+from .ratelimit import (
+    rate_limit as _rate_limit,
+    rate_limit_batch as _rate_limit_batch,
+    BaseRateLimitStorage as _BaseRateLimitStorage,
+)
+from .shared import (
+    start_manager as _start_manager,
+    stop_manager as _stop_manager,
+    ManagerConnection as _ManagerConnection,
+    SharedCacheBackend as _SharedCacheBackend,
+    SharedRateLimitStorage as _SharedRateLimitStorage,
+)
 
 
 # Mapping of attribute names to their correct import paths and actual objects
@@ -56,6 +68,14 @@ _IMPORT_MAPPING = {
     "CacheManager": ("altapi.caching", _CacheManager),
     "CacheMiddleware": ("altapi.caching", _CacheMiddleware),
     "cache": ("altapi.caching", _cache),
+    "rate_limit": ("altapi.ratelimit", _rate_limit),
+    "rate_limit_batch": ("altapi.ratelimit", _rate_limit_batch),
+    "BaseRateLimitStorage": ("altapi.ratelimit", _BaseRateLimitStorage),
+    "start_manager": ("altapi.shared", _start_manager),
+    "stop_manager": ("altapi.shared", _stop_manager),
+    "ManagerConnection": ("altapi.shared", _ManagerConnection),
+    "SharedCacheBackend": ("altapi.shared", _SharedCacheBackend),
+    "SharedRateLimitStorage": ("altapi.shared", _SharedRateLimitStorage),
 }
 
 
@@ -101,4 +121,12 @@ __all__ = [
     "CacheManager",
     "CacheMiddleware",
     "cache",
+    "rate_limit",
+    "rate_limit_batch",
+    "BaseRateLimitStorage",
+    "start_manager",
+    "stop_manager",
+    "ManagerConnection",
+    "SharedCacheBackend",
+    "SharedRateLimitStorage",
 ]
