@@ -85,9 +85,13 @@ class AltAPI:
         self._app = self._core  # Will be built with middlewares in run()
         self._sync_executor = _sync_executor
 
-        # Initialize Jinja2 templates
+        # Initialize Jinja2 templates with optimized settings
         self._templates_directory = str(templates_directory)
-        self._templates = Jinja2Templates(self._templates_directory)
+        self._templates = Jinja2Templates(
+            self._templates_directory,
+            auto_reload=False,  # Disable auto-reload for production
+            cache_size=4096,    # Cache compiled templates
+        )
 
         # Set global templates directory for render_template
         set_default_templates_directory(self._templates_directory)
@@ -108,23 +112,15 @@ class AltAPI:
 
     async def _init_shared_resources(self):
         """Initialize shared resources (called in lifespan)."""
-        print(f"[AltAPI] Initializing shared resources...")
-        
         # Initialize cache backend
         self._cache_backend = SharedCacheBackend(self._get_manager_connection())
-        print(f"[AltAPI] Cache backend initialized: {self._cache_backend}")
-        
+
         CacheManager.set_default_backend(self._cache_backend)
-        print(f"[AltAPI] CacheManager default backend set")
-        
+
         # Rebuild app with middlewares and register cache routes
         if not self._app_built:
-            print(f"[AltAPI] Building middlewares...")
             self._app = self._build_middlewares(self._core)
             self._app_built = True
-            print(f"[AltAPI] Middlewares built, cache routes: {getattr(self, '_cache_routes', [])}")
-        
-        print(f"[AltAPI] Shared resources initialized")
 
     @property
     def templates(self) -> Jinja2Templates:
@@ -166,14 +162,18 @@ class AltAPI:
         def decorator(func):
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
-            
+
             # Register for caching if @cache decorator was applied
-            if hasattr(func, "_cache_expires"):
+            # Check the original function (unwrap if needed)
+            original_func = func
+            while hasattr(original_func, '__wrapped__'):
+                original_func = original_func.__wrapped__
+            
+            if hasattr(original_func, "_cache_expires"):
                 if not hasattr(self, "_cache_routes"):
                     self._cache_routes = []
-                self._cache_routes.append((path, func._cache_expires))
-                print(f"[AltAPI] Registered {path} for caching with expires={func._cache_expires}")
-            
+                self._cache_routes.append((path, original_func._cache_expires))
+
             return func
 
         return decorator
@@ -330,14 +330,12 @@ class AltAPI:
                 host=self._shared_host,
                 port=self._shared_port,
             )
-            print(f"[AltAPI] Shared manager started on {self._shared_host}:{self._shared_port}")
 
     def stop_manager_process(self) -> None:
         """Stop the shared manager process."""
         if self._manager_process is not None:
             stop_manager(self._manager_process)
             self._manager_process = None
-            print("[AltAPI] Shared manager stopped")
 
     def run(
         self,
@@ -408,14 +406,12 @@ class AltAPI:
                 while True:
                     message = await receive()
                     if message["type"] == "lifespan.startup":
-                        print("[AltAPI] Lifespan startup called")
                         # Run GC optimization
                         _run_gc_optimize()
                         # Initialize shared resources
                         await self._init_shared_resources()
                         await send({"type": "lifespan.startup.complete"})
                     elif message["type"] == "lifespan.shutdown":
-                        print("[AltAPI] Lifespan shutdown called")
                         await send({"type": "lifespan.shutdown.complete"})
                         return
             elif scope["type"] == "http":
@@ -491,7 +487,6 @@ class AltAPI:
 
             await response(scope, receive, send)
         except Exception as e:
-            print(f"\033[31mERROR:\033[37m {str(e)}\033[0m")
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
 
     async def _handle_ws(self, scope, receive, send):

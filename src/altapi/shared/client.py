@@ -190,9 +190,7 @@ class SharedCacheBackend:
 
     async def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
-        print(f"[SharedCacheBackend] GET key={key}")
         result = await self._connection.request(MSG_CACHE_GET, key=key)
-        print(f"[SharedCacheBackend] GET result={result}")
         if result is None:
             return None
         if result.get("found"):
@@ -225,15 +223,13 @@ class SharedCacheBackend:
             return obj
         
         encoded_value = encode_bytes(value)
-        
-        print(f"[SharedCacheBackend] SET key={key} expires={expires} value_type={type(value)}")
+
         await self._connection.request(
             MSG_CACHE_SET,
             key=key,
             value=encoded_value,
             expires=expires
         )
-        print(f"[SharedCacheBackend] SET done")
 
     async def delete(self, key: str) -> None:
         """Delete value from cache."""

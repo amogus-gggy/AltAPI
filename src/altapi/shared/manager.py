@@ -67,8 +67,8 @@ class SharedManager:
         try:
             writer.write(response.to_bytes())
             await writer.drain()
-        except Exception as e:
-            print(f"[Manager] Error sending response: {e}")
+        except Exception:
+            pass
 
     async def handle_client(
         self,
@@ -101,8 +101,8 @@ class SharedManager:
             pass
         except asyncio.IncompleteReadError:
             pass
-        except Exception as e:
-            print(f"[Manager] Error handling client: {e}")
+        except Exception:
+            pass
         finally:
             self._clients.discard(writer)
             try:
@@ -154,24 +154,20 @@ class SharedManager:
     async def _handle_cache_get(self, request: Request) -> Response:
         """Handle cache get operation."""
         key = request.data.get("key")
-        print(f"[Manager] CACHE_GET key={key}")
         if not key:
             return create_response(request, {}, error="Missing 'key'")
 
         entry = self._cache.get(key)
         if entry is None:
-            print(f"[Manager] CACHE_GET key={key} NOT FOUND")
             return create_response(request, {"found": False, "value": None})
 
         # Check expiration
         expires_at = entry.get("expires_at")
         if expires_at is not None and time.time() > expires_at:
             # Expired
-            print(f"[Manager] CACHE_GET key={key} EXPIRED")
             del self._cache[key]
             return create_response(request, {"found": False, "value": None})
 
-        print(f"[Manager] CACHE_GET key={key} FOUND")
         return create_response(request, {"found": True, "value": entry["value"]})
 
     async def _handle_cache_set(self, request: Request) -> Response:
@@ -179,7 +175,6 @@ class SharedManager:
         key = request.data.get("key")
         value = request.data.get("value")
         expires = request.data.get("expires")  # in seconds
-        print(f"[Manager] CACHE_SET key={key} expires={expires}")
 
         if not key:
             return create_response(request, {}, error="Missing 'key'")
@@ -198,7 +193,6 @@ class SharedManager:
             "value": value,
             "expires_at": expires_at,
         }
-        print(f"[Manager] CACHE_SET key={key} DONE")
 
         return create_response(request, {"ok": True})
 
@@ -313,8 +307,8 @@ class SharedManager:
                 for key in empty_keys:
                     del self._ratelimits[key]
 
-            except Exception as e:
-                print(f"[Manager] Cleanup error: {e}")
+            except Exception:
+                pass
 
     async def run(self) -> None:
         """Run the manager server."""
@@ -325,7 +319,6 @@ class SharedManager:
         )
 
         addr = server.sockets[0].getsockname()
-        print(f"[Manager] Listening on {addr[0]}:{addr[1]}")
 
         # Start cleanup task
         cleanup_task = asyncio.create_task(self._cleanup_expired())

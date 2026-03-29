@@ -6,6 +6,32 @@ from typing import Any, Dict, Optional, Union
 
 from ..http.responses import HTMLResponse
 
+# Import Jinja2 Undefined for subclass check
+try:
+    from jinja2 import Undefined
+    
+    class _SilentUndefined(Undefined):
+        """Silent undefined handler for faster template rendering."""
+        __slots__ = ()
+        
+        def __str__(self) -> str:
+            return ""
+        
+        def __iter__(self):
+            return iter(())
+        
+        def __bool__(self) -> bool:
+            return False
+except ImportError:
+    class _SilentUndefined:  # type: ignore
+        __slots__ = ()
+        def __str__(self) -> str:
+            return ""
+        def __iter__(self):
+            return iter(())
+        def __bool__(self) -> bool:
+            return False
+
 
 # Global variable for storing default templates_directory
 _default_templates_directory: Union[str, os.PathLike] = "templates"
@@ -34,41 +60,47 @@ def get_default_templates_directory() -> str:
 
 class Jinja2Templates:
     """
-    Class for managing Jinja2 templates.
-
-    Example usage:
-        templates = Jinja2Templates(directory="templates")
-
-        @app.get("/")
-        async def home(request):
-            return templates.TemplateResponse("index.html", {"request": request, "title": "Home"})
+    Optimized Jinja2 templates with compiled template cache.
+    
+    Uses auto_reload=False and precompiled templates for maximum performance.
     """
 
-    def __init__(self, directory: Union[str, os.PathLike], **env_options):
+    __slots__ = ("env", "directory")
+
+    def __init__(
+        self,
+        directory: Union[str, os.PathLike],
+        auto_reload: bool = False,
+        **env_options
+    ):
         """
         Initialize Jinja2 templates.
 
         Args:
             directory: Path to the templates directory
+            auto_reload: Auto-reload templates on change (disable for production)
             **env_options: Additional options for Jinja2 Environment
         """
         try:
             from jinja2 import Environment, FileSystemLoader
         except ImportError:
             raise ImportError("Jinja2 is not installed. Installation: pip install jinja2")
-        
+
         self.directory = str(directory)
 
-        # Default settings
+        # Optimized default settings for production
         default_options = {
             "loader": FileSystemLoader(self.directory),
             "autoescape": True,
+            "auto_reload": auto_reload,
+            "cache_size": 4096,  # Cache up to 4096 compiled templates
+            "undefined": _SilentUndefined,
         }
 
         default_options.update(env_options)
-        
+
         self.env = Environment(**default_options)
-    
+
     def TemplateResponse(
         self,
         name: str,
@@ -95,12 +127,30 @@ class Jinja2Templates:
             status_code=status_code,
             headers=headers,
         )
+    
+    def render(self, name: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Fast template rendering without response object.
+        
+        Args:
+            name: Template file name
+            context: Context for rendering
+            
+        Returns:
+            Rendered template string
+        """
+        template = self.env.get_template(name)
+        return template.render(**(context or {}))
 
 
 class TemplateResponse(HTMLResponse):
     """
-    Response with a rendered HTML template.
+    Optimized response with a rendered HTML template.
+    
+    Renders template at initialization (eager loading) for caching compatibility.
     """
+
+    __slots__ = ()
 
     def __init__(
         self,
@@ -110,19 +160,19 @@ class TemplateResponse(HTMLResponse):
         status_code: int = 200,
         headers: Optional[Dict[str, str]] = None,
     ):
-        self.name = name
-        self.context = context or {}
-        self.templates = templates
-
-        # Render the template
+        # Render the template immediately
         template = templates.env.get_template(name)
-        content = template.render(**self.context)
+        content = template.render(**(context or {}))
 
         super().__init__(
             content=content,
             status_code=status_code,
             headers=headers,
         )
+
+
+# Global cache for Jinja2 environments
+_template_env_cache: Dict[str, Any] = {}
 
 
 def render_template(
@@ -132,7 +182,9 @@ def render_template(
     **jinja_options: Any,
 ) -> HTMLResponse:
     """
-    Function for rendering a Jinja2 template.
+    Optimized function for rendering a Jinja2 template.
+    
+    Uses cached Environment for better performance.
 
     Args:
         template_name: Template file name
@@ -156,11 +208,20 @@ def render_template(
     # Use the provided directory or the default directory
     if templates_directory is None:
         templates_directory = get_default_templates_directory()
+    
+    dir_str = str(templates_directory)
 
-    templates = Environment(
-        loader=FileSystemLoader(str(templates_directory)),
-        autoescape=True
-    )
+    # Get or create cached environment
+    env = _template_env_cache.get(dir_str)
+    if env is None:
+        env = Environment(
+            loader=FileSystemLoader(dir_str),
+            autoescape=True,
+            cache_size=4096,
+            auto_reload=False,
+            **jinja_options
+        )
+        _template_env_cache[dir_str] = env
 
-    template = templates.get_template(template_name)
-    return HTMLResponse(template.render(context or {}, **jinja_options))
+    template = env.get_template(template_name)
+    return HTMLResponse(template.render(**(context or {})))

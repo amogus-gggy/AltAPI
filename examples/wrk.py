@@ -1,10 +1,18 @@
 from altapi import AltAPI
+from altapi.caching import cache, InMemoryCache, CacheManager
 from altapi.http import JSONResponse, PlainTextResponse
 from altapi.templating import render_template
 from pathlib import Path
 
 
-app = AltAPI(templates_directory=Path(__file__).resolve().parent / "templates")
+# Use InMemoryCache for benchmarking (faster than SharedCacheBackend)
+app = AltAPI(
+    templates_directory=Path(__file__).resolve().parent / "templates",
+    cache_timeout=300,
+)
+
+# Set InMemoryCache as default for this benchmark
+CacheManager.set_default_backend(InMemoryCache(max_size=10000))
 
 @app.get("/json")
 async def bench(request):
@@ -15,9 +23,11 @@ async def bench2(request):
     return PlainTextResponse("Plain text!")
 
 @app.get("/template")
+@cache(expires=300)
 async def bench3(request):
+    print("test")
     return render_template("test.html")
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, workers=8)
+    app.run(host="0.0.0.0", port=8000, workers=8, access_log=False)

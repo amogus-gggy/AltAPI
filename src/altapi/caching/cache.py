@@ -3,8 +3,9 @@ Module for caching requests.
 """
 import time
 import asyncio
+from collections import OrderedDict
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Callable, Union
+from typing import Any, Dict, Optional, Callable, Union, NamedTuple
 from functools import wraps
 
 from ..middleware.middleware import BaseMiddleware
@@ -15,6 +16,15 @@ try:
 except ImportError:
     SharedCacheBackend = None  # type: ignore
     ManagerConnection = None  # type: ignore
+
+
+# Optimized cache entry structure - uses __slots__ for memory efficiency
+class CacheEntry(NamedTuple):
+    """Immutable cache entry with minimal memory footprint."""
+    status: int
+    headers: list
+    body: bytes
+    expires_at: float
 
 
 class CacheBackend(ABC):
@@ -67,51 +77,58 @@ class CacheBackend(ABC):
 
 class InMemoryCache(CacheBackend):
     """
-    Simple in-memory caching backend.
+    Optimized in-memory caching backend with LRU eviction.
     """
 
-    def __init__(self, max_size: int = 1000):
+    def __init__(self, max_size: int = 10000):
         """
         Initialize InMemoryCache.
 
         Args:
             max_size: Maximum number of entries in cache
         """
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._max_size = max_size
+        self._lock = asyncio.Lock()
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Optional[CacheEntry]:
         """Get a value from cache."""
         entry = self._cache.get(key)
         if entry is None:
             return None
 
         # Check lifetime
-        expires_at = entry.get("expires_at")
-        if expires_at is not None and time.time() > expires_at:
+        if time.monotonic() > entry.expires_at:
             # Expired
             await self.delete(key)
             return None
 
-        return entry["value"]
+        # Move to end for LRU
+        self._cache.move_to_end(key)
+        return entry
 
     async def set(self, key: str, value: Any, expires: Optional[int] = None) -> None:
         """Set a value in cache."""
-        # Remove oldest entry if limit reached
-        if len(self._cache) >= self._max_size and key not in self._cache:
-            # Simple strategy: remove first found (can be improved to LRU)
-            oldest_key = next(iter(self._cache))
-            await self.delete(oldest_key)
+        # If key exists, just update and move to end
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            self._cache[key] = value
+            return
 
-        expires_at = None
-        if expires is not None:
-            expires_at = time.time() + expires
+        # Remove oldest entries if limit reached (LRU eviction)
+        while len(self._cache) >= self._max_size:
+            self._cache.popitem(last=False)
 
-        self._cache[key] = {
-            "value": value,
-            "expires_at": expires_at,
-            "created_at": time.time(),
-        }
+        expires_at = 0.0 if expires is None else time.monotonic() + expires
+
+        # Create optimized cache entry
+        entry = CacheEntry(
+            status=value["status"],
+            headers=value["headers"],
+            body=value["body"],
+            expires_at=expires_at,
+        )
+        self._cache[key] = entry
 
     async def delete(self, key: str) -> None:
         """Delete a value from cache."""
@@ -128,11 +145,10 @@ class InMemoryCache(CacheBackend):
         Returns:
             Number of deleted entries
         """
-        now = time.time()
+        now = time.monotonic()
         expired_keys = [
-            key
-            for key, entry in self._cache.items()
-            if entry.get("expires_at") is not None and now > entry["expires_at"]
+            key for key, entry in self._cache.items()
+            if entry.expires_at != 0.0 and now > entry.expires_at
         ]
         for key in expired_keys:
             await self.delete(key)
@@ -286,8 +302,6 @@ class CacheMiddleware(BaseMiddleware):
         self._cached_handlers[path] = expires
 
     async def __call__(self, scope, receive, send):
-        print(f"[CacheMiddleware] Request: {scope.get('path')} method={scope.get('method')}")
-        
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
@@ -297,50 +311,55 @@ class CacheMiddleware(BaseMiddleware):
 
         # Cache only GET requests
         if method != "GET":
-            print(f"[CacheMiddleware] Not a GET request, skipping cache")
             return await self.app(scope, receive, send)
 
         # Check exact path match
         expires = self._cached_handlers.get(path)
-        print(f"[CacheMiddleware] Cached handlers: {self._cached_handlers}")
-        print(f"[CacheMiddleware] Path {path} expires={expires}")
 
         # If no exact match, check patterns
         if expires is None:
             for handler_path, handler_expires in self._cached_handlers.items():
                 if self._match_path(path, handler_path):
                     expires = handler_expires
-                    print(f"[CacheMiddleware] Pattern match: {handler_path} -> {expires}")
                     break
 
         if expires is None:
             # Handler not registered for caching
-            print(f"[CacheMiddleware] Not a cached handler, passing through")
             return await self.app(scope, receive, send)
 
         # Generate cache key
         query_string = scope.get("query_string", b"").decode()
         cache_key = f"http:{path}:{query_string}"
-        print(f"[CacheMiddleware] Cache key: {cache_key}")
 
         # Try to get from cache
-        print(f"[CacheMiddleware] Getting from cache...")
-        cached_response = await self.backend.get(cache_key)
-        print(f"[CacheMiddleware] Cache result: {cached_response is not None}")
-        
-        if cached_response is not None:
-            # Send cached response
-            print(f"[CacheMiddleware] Sending cached response!")
-            await send({
-                "type": "http.response.start",
-                "status": cached_response["status"],
-                "headers": cached_response["headers"],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": cached_response["body"],
-                "more_body": False,
-            })
+        cached_result = await self.backend.get(cache_key)
+
+        if cached_result is not None:
+            # Handle both CacheEntry (InMemoryCache) and dict (SharedCacheBackend) formats
+            if isinstance(cached_result, CacheEntry):
+                # InMemoryCache format
+                await send({
+                    "type": "http.response.start",
+                    "status": cached_result.status,
+                    "headers": cached_result.headers,
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": cached_result.body,
+                    "more_body": False,
+                })
+            else:
+                # SharedCacheBackend format (dict)
+                await send({
+                    "type": "http.response.start",
+                    "status": cached_result["status"],
+                    "headers": cached_result["headers"],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": cached_result["body"],
+                    "more_body": False,
+                })
             return
 
         # Intercept response
@@ -349,7 +368,6 @@ class CacheMiddleware(BaseMiddleware):
             "headers": [],
             "body": b"",
         }
-        print(f"[CacheMiddleware] Intercepting response...")
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
@@ -359,9 +377,14 @@ class CacheMiddleware(BaseMiddleware):
                 response_data["body"] = message.get("body", b"")
                 # If this is the last block, save to cache
                 if not message.get("more_body", False):
-                    print(f"[CacheMiddleware] Saving to cache: {cache_key} expires={expires}")
-                    await self.backend.set(cache_key, response_data, expires=expires)
-            
+                    # Save in dict format for SharedCacheBackend compatibility
+                    cache_value = {
+                        "status": response_data["status"],
+                        "headers": response_data["headers"],
+                        "body": response_data["body"],
+                    }
+                    await self.backend.set(cache_key, cache_value, expires=expires)
+
             # Always send the message
             await send(message)
 
