@@ -4,9 +4,10 @@ Rate limiting module with decorator support.
 Provides rate limiting functionality similar to SlowAPI with @rate_limit decorator.
 Uses shared storage by default for multi-worker support.
 """
-
+_WARNED = False
 import asyncio
 import time
+import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from typing import Callable, Deque, Dict, List, Optional, Tuple, Union
 
 from ..http.responses import JSONResponse
 from ..shared import ManagerConnection, SharedRateLimitStorage
+
+
 
 
 # Global shared storage instance (lazy initialized)
@@ -91,6 +94,8 @@ def rate_limit(
 
     Uses shared storage by default for multi-worker support.
 
+    ⚠️ WARNING: Rate limiting adds overhead and can significantly slow down endpoints.
+
     Args:
         limit: Maximum number of requests allowed in the period
         period: Time period in seconds
@@ -107,6 +112,16 @@ def rate_limit(
         async def get_data(request):
             return JSONResponse({"data": "value"})
     """
+    global _WARNED
+    if _WARNED == False:
+        warnings.warn(
+            "Rate limiting adds overhead and can significantly slow down endpoints. "
+            "Use only when necessary.",
+            UserWarning,
+            stacklevel=2
+        )
+        _WARNED = True
+
     storage = _get_shared_storage()
 
     def decorator(func: Callable) -> Callable:
@@ -195,6 +210,8 @@ def rate_limit_batch(
 
     Uses shared storage by default.
 
+    ⚠️ WARNING: Rate limiting adds overhead and can significantly slow down endpoints.
+
     Args:
         limits: List of (limit, period) tuples
         key_func: Function to extract rate limit key
@@ -208,6 +225,16 @@ def rate_limit_batch(
         async def my_endpoint(request):
             ...
     """
+    global _WARNED
+    if not _WARNED:
+        warnings.warn(
+            "Rate limiting adds overhead and can significantly slow down endpoints.(On average by 9.5 times)"
+            "Use only when necessary.",
+            UserWarning,
+            stacklevel=2
+        )
+        _WARNED = True
+
     storage = _get_shared_storage()
 
     def decorator(func: Callable) -> Callable:

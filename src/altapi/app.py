@@ -14,7 +14,8 @@ from .middleware.middleware import Middleware, ASGIApp
 from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
-from .shared import start_manager, stop_manager, ManagerConnection, SharedCacheBackend, SharedRateLimitStorage
+from .shared import start_manager, stop_manager, ManagerConnection, SharedRateLimitStorage
+# SharedCacheBackend removed - use InMemoryCache for per-worker caching
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
@@ -103,19 +104,22 @@ class AltAPI:
         else:
             self._static_directory = None
 
-        # Initialize shared caching (always enabled) - lazy initialization in lifespan
-        self._cache_backend = None
+        # Initialize per-worker in-memory cache (fast, no IPC overhead)
+        # Each worker has its own cache - no sharing between workers
+        self._cache_backend: Optional[InMemoryCache] = None
         self._cache_timeout = cache_timeout
         self._cache_middleware: Optional[CacheMiddleware] = None
-        # Add CacheMiddleware to list (will be initialized in lifespan)
+        # Add CacheMiddleware to list (will be initialized in lifespan with InMemoryCache)
         self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
 
     async def _init_shared_resources(self):
         """Initialize shared resources (called in lifespan)."""
-        # Initialize cache backend
-        self._cache_backend = SharedCacheBackend(self._get_manager_connection())
-
+        # Initialize per-worker in-memory cache backend (fast, no IPC)
+        self._cache_backend = InMemoryCache()
         CacheManager.set_default_backend(self._cache_backend)
+
+        # Initialize shared rate limiting (uses IPC manager)
+        self._manager_connection = self._get_manager_connection()
 
         # Rebuild app with middlewares and register cache routes
         if not self._app_built:
@@ -133,18 +137,20 @@ class AltAPI:
         return self._static_directory
 
     @property
-    def cache_backend(self) -> Optional[CacheBackend]:
-        """Return cache backend (if configured)."""
+    def cache_backend(self) -> Optional[InMemoryCache]:
+        """Return per-worker in-memory cache backend."""
         return self._cache_backend
 
     @property
     def manager_connection(self) -> Optional[ManagerConnection]:
-        """Return shared manager connection (if in shared mode)."""
+        """Return shared manager connection (for rate limiting)."""
         return self._manager_connection
 
     def get_rate_limit_storage(self):
         """Get rate limit storage for use with @rate_limit decorator."""
-        return SharedRateLimitStorage(self._get_manager_connection())
+        if self._manager_connection is None:
+            self._manager_connection = self._get_manager_connection()
+        return SharedRateLimitStorage(self._manager_connection)
 
     def route(self, path, methods=None):
         """
