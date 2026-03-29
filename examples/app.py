@@ -46,7 +46,7 @@ async def hello(request):
 
 
 @app.get("/api/cached")
-@cache(expires=60)  # Кеш на 60 секунд
+@cache(expires=60)  # Cache for 60 seconds
 async def cached_endpoint(request):
     import time
     return JSONResponse({

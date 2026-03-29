@@ -75,7 +75,7 @@ class JSONResponse(Response):
             headers=headers,
             media_type="application/json",
         )
-        # _encoded_body уже установлен в суперклассе
+        # _encoded_body is already set in superclass
 
 
 class HTMLResponse(Response):
@@ -213,7 +213,7 @@ class FileResponse(Response):
     async def __call__(self, scope, receive, send):
         import email.utils
 
-        # Получаем размер файла и информацию о нём
+        # Get file size and information
         try:
             stat_result = await anyio.to_thread.run_sync(os.stat, self.path)
         except FileNotFoundError:

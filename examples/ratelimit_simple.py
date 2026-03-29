@@ -13,16 +13,16 @@ app = AltAPI()
 
 
 @app.get("/api/data")
-@rate_limit(limit=10, period=60)  # 10 запросов в минуту
+@rate_limit(limit=10, period=60)  # 10 requests per minute
 async def get_data(request):
     return JSONResponse({"data": "Hello, World!"})
 
 
 @app.get("/api/premium")
 @rate_limit_batch([
-    (10, 60),       # 10 в минуту
-    (100, 3600),    # 100 в час
-    (1000, 86400),  # 1000 в день
+    (10, 60),       # 10 per minute
+    (100, 3600),    # 100 per hour
+    (1000, 86400),  # 1000 per day
 ])
 async def get_premium(request):
     return JSONResponse({"premium": "data"})

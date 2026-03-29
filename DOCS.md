@@ -1,6 +1,6 @@
 # AltAPI Documentation
 
-**AltAPI** — is simple and powerfull framework for creating high-performance APIs.
+**AltAPI** is a simple and powerful framework for creating high-performance APIs.
 
 ## Table of Contents
 
@@ -24,13 +24,14 @@
     - [CacheManager](#cachemanager)
     - [CacheMiddleware](#cachemiddleware)
     - [@cache](#cache-decorator)
+  - [Rate Limiting](#rate-limiting-api)
+    - [@rate_limit](#rate_limit-decorator)
+    - [@rate_limit_batch](#rate_limit_batch-decorator)
 - [Routing](#routing)
 - [WebSocket](#websocket-1)
 - [Middleware](#middleware)
 - [Caching](#caching)
-  - [Cache Backends](#cache-backends)
-  - [Using @cache Decorator](#using-cache-decorator)
-  - [Using CacheMiddleware](#using-cachemiddleware)
+- [Rate Limiting](#rate-limiting)
 - [Mounting Static Files and Applications](#mounting-static-files-and-applications)
 - [Template Rendering](#template-rendering)
 - [Running the Server](#running-the-server)
@@ -54,6 +55,8 @@
 - ✅ Template rendering (Jinja2)
 - ✅ Multiple response types (Streaming, File, Redirect, PlainText)
 - ✅ Built-in `app.run()` server
+- ✅ Built-in caching with multi-worker support
+- ✅ Built-in rate limiting with multi-worker support
 
 ---
 
@@ -97,11 +100,11 @@ app = AltAPI()
 
 @app.get("/")
 async def home(request):
-  return JSONResponse({"message": "Hello, World!"})
+    return JSONResponse({"message": "Hello, World!"})
 
 
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000)
 ```
 
 ### Running
@@ -135,8 +138,9 @@ app = AltAPI(templates_directory="templates")
 | `middleware` | `List[Middleware]` | List of middleware | `[]` |
 | `templates_directory` | `str` | Directory for Jinja2 templates | `"templates"` |
 | `static_directory` | `str` | Directory for static files (mounted at `/static`) | `None` |
-| `cache_backend` | `CacheBackend` | Cache backend instance (e.g., InMemoryCache) | `None` |
 | `cache_timeout` | `int` | Default cache timeout in seconds | `300` |
+| `shared_host` | `str` | Host for shared manager | `"127.0.0.1"` |
+| `shared_port` | `int` | Port for shared manager | `58000` |
 
 #### Decorator Methods
 
@@ -161,7 +165,7 @@ from altapi.http import Request
 
 @app.get("/users/{id:int}")
 async def get_user(request: Request):
-  ...
+    ...
 ```
 
 #### Attributes
@@ -173,6 +177,7 @@ async def get_user(request: Request):
 | `query_string` | `str` | Query parameters |
 | `headers` | `Dict[str, str]` | Request headers |
 | `path_params` | `Dict[str, Any]` | Path parameters |
+| `scope` | `Dict` | ASGI scope |
 
 #### Methods
 
@@ -199,7 +204,7 @@ from altapi.http import JSONResponse
 
 @app.get("/api/data")
 async def get_data(request):
-  return JSONResponse({"key": "value"}, status_code=200)
+    return JSONResponse({"key": "value"}, status_code=200)
 ```
 
 **Parameters:**
@@ -215,7 +220,7 @@ from altapi.http import HTMLResponse
 
 @app.get("/")
 async def home(request):
-  return HTMLResponse("<h1>Welcome!</h1>")
+    return HTMLResponse("<h1>Welcome!</h1>")
 ```
 
 **Parameters:**
@@ -231,7 +236,7 @@ from altapi.http import PlainTextResponse
 
 @app.get("/text")
 async def text(request):
-  return PlainTextResponse("Hello, World!")
+    return PlainTextResponse("Hello, World!")
 ```
 
 #### StreamingResponse
@@ -242,11 +247,11 @@ from altapi.http import StreamingResponse
 
 @app.get("/stream")
 async def stream(request):
-  async def generate():
-    for i in range(10):
-      yield f"Line {i}\n"
+    async def generate():
+        for i in range(10):
+            yield f"Line {i}\n"
 
-  return StreamingResponse(generate())
+    return StreamingResponse(generate())
 ```
 
 #### FileResponse
@@ -257,7 +262,7 @@ from altapi.http import FileResponse
 
 @app.get("/download")
 async def download(request):
-  return FileResponse("path/to/file.pdf", filename="myfile.pdf")
+    return FileResponse("path/to/file.pdf", filename="myfile.pdf")
 ```
 
 #### RedirectResponse
@@ -268,7 +273,7 @@ from altapi.http import RedirectResponse
 
 @app.get("/redirect")
 async def redirect(request):
-  return RedirectResponse("https://example.com")
+    return RedirectResponse("https://example.com")
 ```
 
 ---
@@ -283,10 +288,10 @@ from altapi.websocket import WebSocket
 
 @app.websocket("/ws/echo")
 async def echo(ws: WebSocket):
-  await ws.accept()
-  while True:
-    text = await ws.receive_text()
-    await ws.send_text(f"Echo: {text}")
+    await ws.accept()
+    while True:
+        text = await ws.receive_text()
+        await ws.send_text(f"Echo: {text}")
 ```
 
 #### Methods
@@ -325,17 +330,17 @@ from altapi.caching import CacheBackend
 
 
 class MyCache(CacheBackend):
-  async def get(self, key: str) -> Optional[Any]:
-    ...
+    async def get(self, key: str) -> Optional[Any]:
+        ...
 
-  async def set(self, key: str, value: Any, expires: int = None) -> None:
-    ...
+    async def set(self, key: str, value: Any, expires: int = None) -> None:
+        ...
 
-  async def delete(self, key: str) -> None:
-    ...
+    async def delete(self, key: str) -> None:
+        ...
 
-  async def clear(self) -> None:
-    ...
+    async def clear(self) -> None:
+        ...
 ```
 
 #### Methods
@@ -403,7 +408,7 @@ from altapi.middleware import Middleware
 from altapi.caching import CacheMiddleware
 
 app = AltAPI(middleware=[
-  Middleware(CacheMiddleware, cache_timeout=300)
+    Middleware(CacheMiddleware, cache_timeout=300)
 ])
 ```
 
@@ -430,13 +435,61 @@ from altapi.caching import cache
 @app.get("/api/data")
 @cache(expires=3600)
 async def get_data(request):
-  return JSONResponse({"data": "cached"})
+    return JSONResponse({"data": "cached"})
 ```
 
 **Parameters:**
 - `expires` — Cache TTL in seconds (default: 300)
 - `key_prefix` — Prefix for cache key
 - `backend` — Cache backend name or instance
+
+---
+
+## Rate Limiting (API Reference)
+
+### @rate_limit Decorator
+
+Decorator for rate limiting endpoints.
+
+```python
+from altapi.ratelimit import rate_limit
+
+
+@app.get("/api/data")
+@rate_limit(limit=10, period=60)  # 10 requests per minute
+async def get_data(request):
+    return JSONResponse({"data": "value"})
+```
+
+**Parameters:**
+- `limit` — Maximum number of requests allowed (default: 10)
+- `period` — Time period in seconds (default: 60)
+- `key_func` — Function to extract rate limit key from request
+- `skip_when` — Function to determine if rate limiting should be skipped
+
+---
+
+### @rate_limit_batch Decorator
+
+Decorator for applying multiple rate limits to the same endpoint.
+
+```python
+from altapi.ratelimit import rate_limit_batch
+
+
+@app.get("/api/data")
+@rate_limit_batch([
+    (10, 60),      # 10 requests per minute
+    (100, 3600),   # 100 requests per hour
+    (1000, 86400)  # 1000 requests per day
+])
+async def get_data(request):
+    return JSONResponse({"data": "value"})
+```
+
+**Parameters:**
+- `limits` — List of (limit, period) tuples
+- `key_func` — Function to extract rate limit key
 
 ---
 
@@ -453,13 +506,13 @@ app = AltAPI()
 
 @app.get("/")
 async def home(request):
-  return HTMLResponse("<h1>Home</h1>")
+    return HTMLResponse("<h1>Home</h1>")
 
 
 @app.post("/api/users")
 async def create_user(request):
-  data = await request.json()
-  return JSONResponse({"id": 1, **data})
+    data = await request.json()
+    return JSONResponse({"id": 1, **data})
 ```
 
 ### Typed Path Parameters
@@ -473,22 +526,22 @@ from altapi.http import Request, JSONResponse
 # int parameter
 @app.get("/api/users/{id:int}")
 async def get_user(request: Request):
-  user_id = request.path_params["id"]  # int
-  return JSONResponse({"id": user_id})
+    user_id = request.path_params["id"]  # int
+    return JSONResponse({"id": user_id})
 
 
 # str parameter
 @app.get("/api/items/{name:str}")
 async def get_item(request: Request):
-  name = request.path_params["name"]  # str
-  return JSONResponse({"name": name})
+    name = request.path_params["name"]  # str
+    return JSONResponse({"name": name})
 
 
 # float parameter
 @app.get("/api/score/{value:float}")
 async def get_score(request: Request):
-  value = request.path_params["value"]  # float
-  return JSONResponse({"score": value})
+    value = request.path_params["value"]  # float
+    return JSONResponse({"score": value})
 ```
 
 ### Synchronous Handlers
@@ -502,7 +555,7 @@ app = AltAPI()
 
 @app.get("/api/sync")
 def sync_handler(request):
-  return JSONResponse({"type": "sync"})
+    return JSONResponse({"type": "sync"})
 ```
 
 ---
@@ -520,10 +573,10 @@ app = AltAPI()
 
 @app.websocket("/ws/echo")
 async def websocket_echo(ws: WebSocket):
-  await ws.accept()
-  while True:
-    text = await ws.receive_text()
-    await ws.send_text(f"Echo: {text}")
+    await ws.accept()
+    while True:
+        text = await ws.receive_text()
+        await ws.send_text(f"Echo: {text}")
 ```
 
 ### WebSocket with Path Parameters
@@ -537,9 +590,9 @@ app = AltAPI()
 
 @app.websocket("/ws/chat/{room:str}")
 async def websocket_chat(ws: WebSocket):
-  room = ws.path_params["room"]
-  await ws.accept()
-  await ws.send_text(f"Welcome to room: {room}!")
+    room = ws.path_params["room"]
+    await ws.accept()
+    await ws.send_text(f"Welcome to room: {room}!")
 ```
 
 ### Iterating Over Messages
@@ -553,10 +606,10 @@ app = AltAPI()
 
 @app.websocket("/ws/stream")
 async def websocket_stream(ws: WebSocket):
-  await ws.accept()
-  async for message in ws:
-    if "text" in message:
-      await ws.send_text(message["text"])
+    await ws.accept()
+    async for message in ws:
+        if "text" in message:
+            await ws.send_text(message["text"])
 ```
 
 ### JSON Handling
@@ -570,10 +623,10 @@ app = AltAPI()
 
 @app.websocket("/ws/json")
 async def websocket_json(ws: WebSocket):
-  await ws.accept()
-  while True:
-    data = await ws.receive_json()
-    await ws.send_json({"received": data, "status": "ok"})
+    await ws.accept()
+    while True:
+        data = await ws.receive_json()
+        await ws.send_json({"received": data, "status": "ok"})
 ```
 
 ---
@@ -593,11 +646,11 @@ from altapi.middleware import BaseMiddleware
 
 
 class BaseMiddleware:
-  def __init__(self, app):
-    self.app = app
+    def __init__(self, app):
+        self.app = app
 
-  async def __call__(self, scope, receive, send):
-    await self.app(scope, receive, send)
+    async def __call__(self, scope, receive, send):
+        await self.app(scope, receive, send)
 ```
 
 example middleware:
@@ -608,13 +661,13 @@ from altapi.middleware import BaseMiddleware
 
 
 class TimingMiddleware(BaseMiddleware):
-  async def __call__(self, scope, receive, send):
-    if scope["type"] == "lifespan":
-      return await self.app(scope, receive, send)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "lifespan":
+            return await self.app(scope, receive, send)
 
-    start = time.time()
-    await self.app(scope, receive, send)
-    print(f"[TIME] {scope.get('path')} took {time.time() - start:.4f}s")
+        start = time.time()
+        await self.app(scope, receive, send)
+        print(f"[TIME] {scope.get('path')} took {time.time() - start:.4f}s")
 ```
 
 to use it:
@@ -624,7 +677,7 @@ from altapi import AltAPI
 from altapi.middleware import Middleware
 
 app = AltAPI(middleware=[
-  Middleware(TimingMiddleware)
+    Middleware(TimingMiddleware)
 ])
 ```
 
@@ -640,32 +693,46 @@ The simplest way to enable caching:
 
 ```python
 from altapi import AltAPI
-from altapi.caching import InMemoryCache, cache
+from altapi.caching import cache
 
-app = AltAPI(
-  cache_backend=InMemoryCache(max_size=1000),
-  cache_timeout=300
-)
+app = AltAPI()
 
 
 @app.get("/api/data")
 @cache(expires=3600)
 async def get_data(request):
-  return JSONResponse({"data": "cached"})
+    return JSONResponse({"data": "cached"})
 ```
 
-### Cache Backends
+### How It Works
 
-AltAPI supports multiple cache backends. By default, it uses `InMemoryCache`.
+AltAPI uses a **centralized manager** for cache storage. This ensures operation in multi-worker mode without additional configuration.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Shared Manager Process                 │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Cache Store                        │    │
+│  │              (in-memory)                        │    │
+│  └─────────────────────────────────────────────────┘    │
+│                    TCP: 127.0.0.1:58000                 │
+└─────────────────────────────────────────────────────────┘
+           ▲                    ▲                    ▲
+           │                    │                    │
+    ┌──────┴──────┐      ┌──────┴──────┐      ┌──────┴──────┐
+    │  Worker 1   │      │  Worker 2   │      │  Worker 3   │
+    │  (uvicorn)  │      │  (uvicorn)  │      │  (uvicorn)  │
+    └─────────────┘      └─────────────┘      └─────────────┘
+```
+
+### Automatic Startup
+
+The manager starts **automatically** when calling `app.run()`:
 
 ```python
-from altapi.caching import InMemoryCache, CacheManager
-
-# Set default cache backend (if not using cache_backend in AltAPI)
-CacheManager.set_default_backend(InMemoryCache(max_size=1000))
-
-# Or register named backends
-CacheManager.register_backend("redis", MyRedisCache())
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
+    # Manager started automatically!
 ```
 
 ### Using @cache Decorator
@@ -675,44 +742,22 @@ The simplest way to cache a function result:
 ```python
 from altapi import AltAPI
 from altapi.http import JSONResponse
-from altapi.caching import cache, InMemoryCache
+from altapi.caching import cache
 
-app = AltAPI(cache_backend=InMemoryCache())
+app = AltAPI()
 
 
 @app.get("/api/data")
 @cache(expires=3600)  # Cache for 1 hour
 async def get_data(request):
-  # Expensive operation
-  return JSONResponse({"data": "cached for 1 hour"})
+    # Expensive operation
+    return JSONResponse({"data": "cached for 1 hour"})
 ```
 
 **Parameters:**
 - `expires` — Cache TTL in seconds (default: 300)
 - `key_prefix` — Prefix for cache key (optional)
 - `backend` — Cache backend name or instance (optional)
-
-### Using CacheMiddleware
-
-CacheMiddleware is automatically added when you specify `cache_backend` in `AltAPI()`.
-
-For manual configuration:
-
-```python
-from altapi import AltAPI
-from altapi.middleware import Middleware
-from altapi.caching import CacheMiddleware, InMemoryCache, cache
-
-app = AltAPI(middleware=[
-  Middleware(CacheMiddleware, cache_timeout=300, backend=InMemoryCache())
-])
-
-
-@app.get("/api/users/{id:int}")
-@cache(expires=3600)
-async def get_user(request):
-  return JSONResponse({"id": 1, "name": "John"})
-```
 
 ### Using app.cache() Method
 
@@ -722,12 +767,13 @@ Alternative way to register cached routes:
 from altapi import AltAPI
 from altapi.caching import InMemoryCache
 
-app = AltAPI(cache_backend=InMemoryCache(), cache_timeout=300)
+app = AltAPI(cache_timeout=300)
 
 
 @app.cache("/api/data", expires=3600)
+@app.get("/api/data")
 async def get_data(request):
-  return JSONResponse({"data": "cached"})
+    return JSONResponse({"data": "cached"})
 ```
 
 ### Custom Cache Backend
@@ -740,21 +786,527 @@ from altapi.caching import CacheBackend
 
 
 class RedisCache(CacheBackend):
-  async def get(self, key: str):
-    # Implement get logic
-    pass
+    async def get(self, key: str):
+        # Implement get logic
+        pass
 
-  async def set(self, key: str, value: Any, expires: int = None):
-    # Implement set logic
-    pass
+    async def set(self, key: str, value: Any, expires: int = None):
+        # Implement set logic
+        pass
 
-  async def delete(self, key: str):
-    # Implement delete logic
-    pass
+    async def delete(self, key: str):
+        # Implement delete logic
+        pass
 
-  async def clear(self):
-    # Implement clear logic
-    pass
+    async def clear(self):
+        # Implement clear logic
+        pass
+```
+
+---
+
+## Rate Limiting
+
+Rate Limiting is a mechanism for controlling the number of requests a client can send within a specified time period. It's an important part of protecting APIs from abuse, DDoS attacks, and excessive server load.
+
+### Quick Start
+
+Rate limiting in AltAPI is extremely simple to use. All you need is to import the decorator:
+
+```python
+from altapi import AltAPI
+from altapi.http import JSONResponse
+from altapi.ratelimit import rate_limit
+
+app = AltAPI()
+
+
+@app.get("/api/data")
+@rate_limit(limit=10, period=60)  # 10 requests per minute
+async def get_data(request):
+    return JSONResponse({"data": "value"})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
+```
+
+### Key Features
+
+- ✅ **Simple import** — just `from altapi.ratelimit import rate_limit`
+- ✅ **No configuration** — manager starts automatically at `app.run()`
+- ✅ **Multi-worker support** — all data stored in central process
+- ✅ **Production ready** — works out of the box
+
+### What Happens When Limit Exceeded
+
+```json
+{
+    "error": "Rate limit exceeded",
+    "message": "Too many requests. Try again in 45 seconds."
+}
+```
+
+---
+
+### @rate_limit Decorator
+
+Main decorator for rate limiting requests.
+
+#### Syntax
+
+```python
+from altapi.ratelimit import rate_limit
+
+
+@app.get("/api/endpoint")
+@rate_limit(
+    limit=10,           # Maximum requests
+    period=60,          # Period in seconds
+    key_func=None,      # Function to get key
+    skip_when=None      # Condition to skip
+)
+async def my_endpoint(request):
+    ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | `int` | `10` | Maximum number of requests per period |
+| `period` | `float` | `60` | Period duration in seconds |
+| `key_func` | `Callable` | `None` | Function to extract unique key from request |
+| `skip_when` | `Callable` | `None` | Function to determine when to skip rate limiting |
+
+#### limit and period Parameters
+
+**`limit`** — maximum number of requests allowed per period.
+
+**`period`** — period duration in seconds.
+
+##### Examples
+
+```python
+# 5 requests per second
+@rate_limit(limit=5, period=1)
+async def fast_endpoint(request):
+    ...
+
+# 100 requests per minute
+@rate_limit(limit=100, period=60)
+async def normal_endpoint(request):
+    ...
+
+# 1000 requests per hour
+@rate_limit(limit=1000, period=3600)
+async def hourly_endpoint(request):
+    ...
+
+# 10000 requests per day
+@rate_limit(limit=10000, period=86400)
+async def daily_endpoint(request):
+    ...
+```
+
+#### key_func Parameter
+
+**`key_func`** — function that extracts a unique identifier from the request. By default, the client IP address is used.
+
+##### Default Function (IP Address)
+
+```python
+# Internal default implementation
+def default_key_func(request):
+    return request.client.host if request.client else "unknown"
+```
+
+##### Custom Key Function
+
+```python
+def get_api_key(request):
+    """Get key from X-API-Key header."""
+    return request.headers.get("X-API-Key", "anonymous")
+
+
+@app.get("/api/premium")
+@rate_limit(limit=100, period=60, key_func=get_api_key)
+async def premium_endpoint(request):
+    return JSONResponse({"premium": "data"})
+```
+
+##### Async Key Function
+
+```python
+async def get_user_key(request):
+    """Async user key extraction."""
+    token = request.headers.get("Authorization", "")
+    if token.startswith("Bearer "):
+        # Token verification in DB here
+        user_id = await get_user_id_from_token(token[7:])
+        return f"user:{user_id}"
+    return "anonymous"
+
+
+@app.get("/api/user")
+@rate_limit(limit=50, period=60, key_func=get_user_key)
+async def user_endpoint(request):
+    return JSONResponse({"user": "data"})
+```
+
+#### skip_when Parameter
+
+**`skip_when`** — function that determines when to skip rate limiting. Returns `True` to skip or `False` to apply rate limiting.
+
+##### Skip for Administrators
+
+```python
+def is_admin(request):
+    """Skip rate limiting for administrators."""
+    admin_key = request.headers.get("X-Admin-Key", "")
+    return admin_key == "supersecretadminkey"
+
+
+@app.get("/api/admin")
+@rate_limit(limit=10, period=60, skip_when=is_admin)
+async def admin_endpoint(request):
+    return JSONResponse({"admin": "data"})
+```
+
+##### Skip for Local Requests
+
+```python
+def is_local(request):
+    """Skip rate limiting for local requests."""
+    return request.client.host in ("127.0.0.1", "localhost")
+
+
+@app.get("/api/internal")
+@rate_limit(limit=100, period=60, skip_when=is_local)
+async def internal_endpoint(request):
+    return JSONResponse({"internal": "data"})
+```
+
+##### Async Check
+
+```python
+async def has_premium_access(request):
+    """Skip rate limiting for premium users."""
+    api_key = request.headers.get("X-API-Key", "")
+    # Check in DB or cache
+    is_premium = await check_premium_status(api_key)
+    return is_premium
+
+
+@app.get("/api/premium")
+@rate_limit(limit=100, period=60, skip_when=has_premium_access)
+async def premium_endpoint(request):
+    return JSONResponse({"premium": "data"})
+```
+
+---
+
+### @rate_limit_batch Decorator
+
+Decorator for applying **multiple limits simultaneously** to a single endpoint.
+
+#### Syntax
+
+```python
+from altapi.ratelimit import rate_limit_batch
+
+
+@app.get("/api/endpoint")
+@rate_limit_batch(
+    limits=[
+        (10, 60),      # 10 requests per minute
+        (100, 3600),   # 100 requests per hour
+        (1000, 86400)  # 1000 requests per day
+    ],
+    key_func=None     # Function to get key
+)
+async def my_endpoint(request):
+    ...
+```
+
+#### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limits` | `List[Tuple[int, float]]` | **Required** | List of (limit, period) tuples |
+| `key_func` | `Callable` | `None` | Function to extract key |
+
+#### How It Works
+
+All limits are checked **simultaneously**. If **any** limit is exceeded, a 429 error is returned.
+
+```
+Request → Check limit 1 (10/min) → OK
+        → Check limit 2 (100/hour) → OK
+        → Check limit 3 (1000/day) → OK
+        → Allow request
+```
+
+#### Examples
+
+##### Standard API
+
+```python
+@app.get("/api/data")
+@rate_limit_batch([
+    (10, 60),      # 10 requests per minute
+    (100, 3600),   # 100 requests per hour
+    (1000, 86400)  # 1000 requests per day
+])
+async def get_data(request):
+    return JSONResponse({"data": "value"})
+```
+
+##### Strict Authentication Limit
+
+```python
+@app.post("/api/login")
+@rate_limit_batch([
+    (5, 60),       # 5 attempts per minute
+    (20, 3600),    # 20 attempts per hour
+    (50, 86400)    # 50 attempts per day
+])
+async def login(request):
+    data = await request.json()
+    # Authentication logic
+    return JSONResponse({"token": "..."})
+```
+
+##### Public API with Different Tiers
+
+```python
+@app.get("/api/public")
+@rate_limit_batch([
+    (30, 60),      # 30 requests per minute
+    (500, 3600)    # 500 requests per hour
+])
+async def public_api(request):
+    return JSONResponse({"public": "data"})
+```
+
+---
+
+### How Rate Limiting Works
+
+#### Architecture
+
+AltAPI uses a **centralized manager** for rate limit data storage. This ensures operation in multi-worker mode without additional configuration.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Shared Manager Process                 │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Rate Limit Store                   │    │
+│  │              (in-memory)                        │    │
+│  └─────────────────────────────────────────────────┘    │
+│                    TCP: 127.0.0.1:58000                 │
+└─────────────────────────────────────────────────────────┘
+           ▲                    ▲                    ▲
+           │                    │                    │
+    ┌──────┴──────┐      ┌──────┴──────┐      ┌──────┴──────┐
+    │  Worker 1   │      │  Worker 2   │      │  Worker 3   │
+    │  (uvicorn)  │      │  (uvicorn)  │      │  (uvicorn)  │
+    └─────────────┘      └─────────────┘      └─────────────┘
+```
+
+#### Automatic Startup
+
+The manager starts **automatically** when calling `app.run()`:
+
+```python
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
+    # Manager started automatically!
+```
+
+When the application stops, the manager also shuts down gracefully.
+
+#### Advantages
+
+- **No configuration** — works out of the box
+- **Multi-worker support** — all workers see shared state
+- **Automatic reconnection** — on connection loss
+- **Centralized storage** — data in one process
+
+---
+
+### Customization
+
+#### Custom Key Functions
+
+The key function determines how to identify the client. By default, the IP address is used.
+
+##### By API Key
+
+```python
+def get_api_key(request):
+    """Identification by X-API-Key header."""
+    return request.headers.get("X-API-Key", "anonymous")
+
+
+@app.get("/api/data")
+@rate_limit(limit=100, period=60, key_func=get_api_key)
+async def get_data(request):
+    return JSONResponse({"data": "value"})
+```
+
+##### By User (from Token)
+
+```python
+async def get_user_id(request):
+    """Identification by JWT token."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return "anonymous"
+
+    token = auth_header[7:]
+    # JWT decoding and user_id extraction here
+    try:
+        payload = decode_jwt(token)
+        return f"user:{payload['sub']}"
+    except Exception:
+        return "anonymous"
+
+
+@app.get("/api/user/profile")
+@rate_limit(limit=50, period=60, key_func=get_user_id)
+async def get_profile(request):
+    return JSONResponse({"profile": "data"})
+```
+
+##### By Combined Parameters
+
+```python
+def get_combined_key(request):
+    """Key based on IP and User-Agent."""
+    ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    return f"{ip}:{user_agent}"
+
+
+@app.get("/api/browser")
+@rate_limit(limit=100, period=60, key_func=get_combined_key)
+async def browser_endpoint(request):
+    return JSONResponse({"browser": "data"})
+```
+
+---
+
+#### Custom Skip Conditions
+
+The `skip_when` function determines when not to apply rate limiting.
+
+##### Skip for Internal IPs
+
+```python
+def is_internal(request):
+    """Skip for internal IPs."""
+    internal_ips = ["10.", "172.16.", "172.17.", "192.168."]
+    ip = request.client.host if request.client else ""
+    return any(ip.startswith(prefix) for prefix in internal_ips)
+
+
+@app.get("/api/internal")
+@rate_limit(limit=10, period=60, skip_when=is_internal)
+async def internal_endpoint(request):
+    return JSONResponse({"internal": "data"})
+```
+
+##### Skip in Debug Mode
+
+```python
+import os
+
+def is_debug_mode(request):
+    """Skip in debug mode."""
+    return os.getenv("DEBUG", "false").lower() == "true"
+
+
+@app.get("/api/debug")
+@rate_limit(limit=5, period=60, skip_when=is_debug_mode)
+async def debug_endpoint(request):
+    return JSONResponse({"debug": "data"})
+```
+
+##### Skip for Whitelist Keys
+
+```python
+WHITELIST_KEYS = {"premium-key-1", "premium-key-2", "admin-key"}
+
+def is_whitelisted(request):
+    """Skip for whitelist keys."""
+    api_key = request.headers.get("X-API-Key", "")
+    return api_key in WHITELIST_KEYS
+
+
+@app.get("/api/premium")
+@rate_limit(limit=100, period=60, skip_when=is_whitelisted)
+async def premium_endpoint(request):
+    return JSONResponse({"premium": "data"})
+```
+
+---
+
+### HTTP Headers
+
+AltAPI adds standard rate limiting headers to responses.
+
+#### Headers in Successful Response
+
+```
+X-RateLimit-Limit: 10          # Maximum requests per period
+X-RateLimit-Remaining: 7       # Requests remaining
+X-RateLimit-Reset: 1711737600  # Reset time (Unix timestamp)
+```
+
+#### Headers When Limit Exceeded (429)
+
+```
+X-RateLimit-Limit: 10          # Maximum requests per period
+X-RateLimit-Remaining: 0       # Requests remaining
+X-RateLimit-Reset: 1711737600  # Reset time (Unix timestamp)
+Retry-After: 45                # Seconds until reset
+```
+
+#### Example 429 Response
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1711737600
+Retry-After: 45
+
+{
+    "error": "Rate limit exceeded",
+    "message": "Too many requests. Try again in 45 seconds."
+}
+```
+
+#### Reading Headers on Client
+
+```python
+import requests
+
+response = requests.get("http://localhost:8000/api/data")
+
+# Check limits
+limit = response.headers.get("X-RateLimit-Limit")
+remaining = response.headers.get("X-RateLimit-Remaining")
+reset = response.headers.get("X-RateLimit-Reset")
+
+print(f"Limit: {limit}, Remaining: {remaining}, Reset: {reset}")
+
+# Handle 429
+if response.status_code == 429:
+    retry_after = response.headers.get("Retry-After")
+    print(f"Retry after {retry_after} seconds")
 ```
 
 ---
@@ -829,10 +1381,10 @@ templates = Jinja2Templates(directory="templates")
 
 @app.get("/")
 async def home(request):
-  return templates.TemplateResponse(
-    "index.html",
-    {"request": request, "title": "Home Page", "user": "John"}
-  )
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "title": "Home Page", "user": "John"}
+    )
 ```
 
 ### Using render_template Function
@@ -846,10 +1398,10 @@ app = AltAPI(templates_directory="templates")
 
 @app.get("/")
 async def home(request):
-  return render_template(
-    "index.html",
-    {"title": "Home", "user": "John"}
-  )
+    return render_template(
+        "index.html",
+        {"title": "Home", "user": "John"}
+    )
 ```
 
 ### Template Example (templates/index.html)
@@ -882,11 +1434,11 @@ app = AltAPI()
 
 @app.get("/")
 async def home(request):
-  return HTMLResponse("<h1>Hello!</h1>")
+    return HTMLResponse("<h1>Hello!</h1>")
 
 
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000)
 ```
 
 ### Parameters
@@ -904,7 +1456,7 @@ To run the server with multiple worker processes:
 
 ```python
 if __name__ == "__main__":
-  app.run(host="0.0.0.0", port=8000, workers=4)
+    app.run(host="0.0.0.0", port=8000, workers=4)
 ```
 
 **Note:** When using `workers > 1`, the application file must be run as a module (not in REPL or interactive mode).
@@ -913,8 +1465,8 @@ if __name__ == "__main__":
 
 ```python
 if __name__ == "__main__":
-  import uvicorn
-  uvicorn.run("myapp:app", host="0.0.0.0", port=8000, workers=4)
+    import uvicorn
+    uvicorn.run("myapp:app", host="0.0.0.0", port=8000, workers=4)
 ```
 
 ---
@@ -933,32 +1485,32 @@ app = AltAPI()
 
 @app.get("/")
 async def home(request):
-  return HTMLResponse("<h1>Welcome to AltAPI!</h1>")
+    return HTMLResponse("<h1>Welcome to AltAPI!</h1>")
 
 
 @app.get("/api/hello")
 async def hello(request):
-  return JSONResponse({"message": "Hello, World!"})
+    return JSONResponse({"message": "Hello, World!"})
 
 
 @app.post("/api/echo")
 async def echo(request):
-  data = await request.json()
-  return JSONResponse({"echo": data})
+    data = await request.json()
+    return JSONResponse({"echo": data})
 
 
 @app.websocket("/ws/echo")
 async def websocket_echo(ws: WebSocket):
-  await ws.accept()
-  while True:
-    text = await ws.receive_text()
-    await ws.send_text(f"Echo: {text}")
+    await ws.accept()
+    while True:
+        text = await ws.receive_text()
+        await ws.send_text(f"Echo: {text}")
 
 
 if __name__ == "__main__":
-  import uvicorn
+    import uvicorn
 
-  uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
 More examples available in `examples/` folder.
@@ -1000,97 +1552,42 @@ python test_app.py
 
 ```
 AltAPI/
-├── src/
-│   └── altapi/
-│       ├── __init__.py          # Main package exports
-│       ├── app.py               # Main application class
-│       ├── router.pyx           # Cython router
-│       ├── http/                # HTTP components
-│       │   ├── __init__.py
-│       │   ├── request.py       # Request handling
-│       │   └── responses.py     # Response classes
-│       ├── websocket/           # WebSocket support
-│       │   ├── __init__.py
-│       │   └── ws.py
-│       ├── templating/          # Template rendering
-│       │   ├── __init__.py
-│       │   ├── templates.py     # Jinja2 templates
-│       │   └── default_templates.py
-│       ├── caching/             # Caching system
-│       │   ├── __init__.py
-│       │   └── cache.py
-│       └── middleware/          # Middleware support
-│           ├── __init__.py
-│           └── middleware.py
-├── examples/
-│   └── app.py                   # Usage examples
-├── test_app.py                  # Tests
-├── pyproject.toml               # Build configuration
-└── setup.py                     # Setup script
+├── src/altapi/              # Main package
+│   ├── __init__.py          # Package exports
+│   ├── app.py               # AltAPI application class
+│   ├── router.pyx           # Cython router implementation
+│   ├── http/                # HTTP components
+│   ├── websocket/           # WebSocket support
+│   ├── middleware/          # Middleware system
+│   ├── templating/          # Jinja2 integration
+│   ├── caching/             # Caching system
+│   ├── ratelimit/           # Rate limiting
+│   └── shared/              # Shared manager for multi-worker
+├── examples/                # Example applications
+├── test_app.py              # Integration tests
+├── pyproject.toml           # Build configuration
+├── setup.py                 # Legacy setup
+└── DOCS.md                  # This documentation
 ```
 
-### Recommended Imports (from subpackages)
-
-For better organization and to avoid deprecation warnings, import from subpackages (except AltAPI):
-
-```python
-# Main application
-from altapi import AltAPI
-
-# HTTP components
-from altapi.http import Request, Response, JSONResponse, HTMLResponse, PlainTextResponse, StreamingResponse,
-
-FileResponse, RedirectResponse
-
-# WebSocket
-from altapi.websocket import WebSocket, WebSocketState
-
-# Templates
-from altapi.templating import Jinja2Templates, TemplateResponse, render_template
-
-# Caching
-from altapi.caching import cache, InMemoryCache, CacheManager, CacheMiddleware, CacheBackend
-
-# Middleware
-from altapi.middleware import Middleware, BaseMiddleware, ASGIApp
-```
-
-### Deprecated Imports (still supported but not recommended)
-
-Direct imports from `altapi` are deprecated but still work with a warning:
-
-```python
-# Deprecated - will show DeprecationWarning
-from altapi import Request, JSONResponse, WebSocket, cache
-```
-
-### Building
+### Building from Source
 
 ```bash
-pip install -e .[dev]
+# Build wheel distribution
+python -m build
+
+# Build with Cython compilation
+python setup.py build_ext --inplace
 ```
 
-### Dependencies
+### License
 
-**Core:**
-- uvicorn >= 0.30.0
-
-**Development:**
-- pytest >= 8.0.0
-- httpx >= 0.27.0
-- cython >= 3.0.0
+AGPLv3 - See [LICENSE.txt](LICENSE.txt) for details.
 
 ---
 
-## License
+## See Also
 
-AGPLv3 License — see `LICENSE.txt` for details.
-
----
-
-## Links
-
-- [GitHub Repository](https://github.com/amogus-gggy/altapi)
-- [PyPI Package](https://pypi.org/project/altapi/)
-
----
+- [Middleware](#middleware) — for creating custom middleware
+- [WebSocket](#websocket-1) — for WebSocket support
+- [Template Rendering](#template-rendering) — for Jinja2 templates

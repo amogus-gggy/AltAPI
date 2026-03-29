@@ -378,7 +378,7 @@ class CacheMiddleware(BaseMiddleware):
         if pattern == path:
             return True
 
-        # Разбиваем на части
+        # Split into parts
         path_parts = path.strip("/").split("/")
         pattern_parts = pattern.strip("/").split("/")
 
@@ -387,7 +387,7 @@ class CacheMiddleware(BaseMiddleware):
 
         for path_part, pattern_part in zip(path_parts, pattern_parts):
             if pattern_part.startswith("{") and pattern_part.endswith("}"):
-                # Это параметр, пропускаем
+                # This is a parameter, skip it
                 continue
             if path_part != pattern_part:
                 return False
