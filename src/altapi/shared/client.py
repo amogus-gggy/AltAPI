@@ -202,7 +202,11 @@ class SharedCacheBackend:
                         import base64
                         return base64.b64decode(obj["__bytes__"])
                     return {k: decode_bytes(v) for k, v in obj.items()}
-                elif isinstance(obj, (list, tuple)):
+                elif isinstance(obj, list):
+                    # Check if this looks like a header tuple: [bytes, bytes] or [[...], [...]]
+                    # For headers, we need to return tuples instead of lists
+                    if len(obj) == 2 and all(isinstance(item, bytes) for item in obj):
+                        return tuple(obj)
                     return [decode_bytes(item) for item in obj]
                 return obj
             return decode_bytes(value)

@@ -237,11 +237,11 @@ def cache(
             return JSONResponse({"data": "expensive computation"})
     """
     import inspect
-    
+
     def decorator(func: Callable) -> Callable:
         # Mark function for caching - will be registered by app when route is added
         func._cache_expires = expires
-        
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # Just call the function - caching is handled by CacheMiddleware
@@ -249,6 +249,9 @@ def cache(
             if asyncio.iscoroutine(result):
                 result = await result
             return result
+
+        # Preserve the _cache_expires attribute on wrapper for app.route() to detect
+        wrapper._cache_expires = expires
 
         return wrapper
 
@@ -332,7 +335,12 @@ class CacheMiddleware(BaseMiddleware):
         cache_key = f"http:{path}:{query_string}"
 
         # Try to get from cache
-        cached_result = await self.backend.get(cache_key)
+        try:
+            cached_result = await self.backend.get(cache_key)
+        except Exception as e:
+            import sys
+            print(f"[CacheMiddleware] Error getting {cache_key} from cache: {e}", file=sys.stderr)
+            cached_result = None
 
         if cached_result is not None:
             # Handle both CacheEntry (InMemoryCache) and dict (SharedCacheBackend) formats
@@ -383,7 +391,12 @@ class CacheMiddleware(BaseMiddleware):
                         "headers": response_data["headers"],
                         "body": response_data["body"],
                     }
-                    await self.backend.set(cache_key, cache_value, expires=expires)
+                    try:
+                        await self.backend.set(cache_key, cache_value, expires=expires)
+                    except Exception as e:
+                        # Log error but don't fail the request
+                        import sys
+                        print(f"[CacheMiddleware] Error caching {cache_key}: {e}", file=sys.stderr)
 
             # Always send the message
             await send(message)

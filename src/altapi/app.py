@@ -164,15 +164,24 @@ class AltAPI:
                 self._router.add_route(path, m.upper(), func)
 
             # Register for caching if @cache decorator was applied
-            # Check the original function (unwrap if needed)
-            original_func = func
-            while hasattr(original_func, '__wrapped__'):
-                original_func = original_func.__wrapped__
-            
-            if hasattr(original_func, "_cache_expires"):
+            # Check the function itself first, then unwrap to find _cache_expires
+            check_func = func
+            cache_expires = None
+
+            # Check current function and wrapped chain for _cache_expires
+            while check_func is not None:
+                if hasattr(check_func, "_cache_expires"):
+                    cache_expires = check_func._cache_expires
+                    break
+                if hasattr(check_func, '__wrapped__'):
+                    check_func = check_func.__wrapped__
+                else:
+                    break
+
+            if cache_expires is not None:
                 if not hasattr(self, "_cache_routes"):
                     self._cache_routes = []
-                self._cache_routes.append((path, original_func._cache_expires))
+                self._cache_routes.append((path, cache_expires))
 
             return func
 
