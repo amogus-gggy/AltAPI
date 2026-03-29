@@ -6,7 +6,7 @@ from pathlib import Path
 
 import os
 
-# Use InMemoryCache for benchmarking (faster than SharedCacheBackend)
+
 BASE_DIR = Path(__file__).resolve().parent
 app = AltAPI(
     templates_directory=BASE_DIR / "templates",

@@ -1,16 +1,16 @@
 # AltAPI Documentation
 
-**AltAPI** is a simple and powerful framework for creating high-performance APIs.
+**AltAPI** is a simple and fast ASGI microframework for Python with WebSocket support.
 
 ## Table of Contents
 
-
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Features](#features)
 - [API Reference](#api-reference)
   - [AltAPI](#altapi)
   - [Request](#request)
-  - [Response](#response)
+  - [Response Classes](#response-classes)
     - [JSONResponse](#jsonresponse)
     - [HTMLResponse](#htmlresponse)
     - [PlainTextResponse](#plaintextresponse)
@@ -19,7 +19,7 @@
     - [RedirectResponse](#redirectresponse)
   - [WebSocket](#websocket)
 - [Routing](#routing)
-- [WebSocket](#websocket-1)
+- [WebSocket Support](#websocket-support)
 - [Middleware](#middleware)
 - [Caching](#caching)
 - [Rate Limiting](#rate-limiting)
@@ -35,19 +35,18 @@
 ## Features
 
 - ✅ ASGI compliant
-- ✅ JSON and HTML responses
-- ✅ Typed path parameters (`{id:int}`, `{name:str}`, `{value:float}`)
-- ✅ Request body parsing (JSON, text)
-- ✅ Multiple HTTP methods (GET, POST, PUT, DELETE)
-- ✅ Sync and async handlers
+- ✅ JSON, HTML, and text responses
+- ✅ Typed path parameters (`{id:int}`, `{name:str}`, `{value:float}`, `{path:path}`)
+- ✅ Sync and async handler support
 - ✅ Full WebSocket support
-- ✅ Optimized Cython router
+- ✅ Built-in server (`app.run()`) with multi-worker support
+- ✅ Jinja2 templates
+- ✅ Response caching with per-worker InMemoryCache
+- ✅ Rate limiting with shared manager for multi-worker support
 - ✅ Static file mounting
-- ✅ Template rendering (Jinja2)
-- ✅ Multiple response types (Streaming, File, Redirect, PlainText)
-- ✅ Built-in `app.run()` server
-- ✅ Built-in caching with multi-worker support
-- ✅ Built-in rate limiting with multi-worker support
+- ✅ Optimized Cython router
+- ✅ GC optimizations for better performance
+- ✅ Pre-encoded headers for common media types
 
 ---
 
@@ -62,8 +61,9 @@ pip install altapi
 - Python >= 3.10
 - uvicorn >= 0.30.0
 - anyio >= 4.0.0
-- jinja2
+- jinja2 >= 3.0.0
 - ujson
+- Cython >= 3.0.0
 
 ### For Development
 
@@ -133,7 +133,7 @@ app = AltAPI(templates_directory="templates")
 | `shared_host` | `str` | Host for shared manager | `"127.0.0.1"` |
 | `shared_port` | `int` | Port for shared manager | `58000` |
 
-#### Decorator Methods
+#### HTTP Method Decorators
 
 | Method | Description |
 |--------|-------------|
@@ -141,8 +141,13 @@ app = AltAPI(templates_directory="templates")
 | `@app.post(path)` | Register POST route |
 | `@app.put(path)` | Register PUT route |
 | `@app.delete(path)` | Register DELETE route |
+| `@app.patch(path)` | Register PATCH route |
+| `@app.head(path)` | Register HEAD route |
+| `@app.options(path)` | Register OPTIONS route |
+| `@app.trace(path)` | Register TRACE route |
+| `@app.connect(path)` | Register CONNECT route |
 | `@app.websocket(path)` | Register WebSocket route |
-| `@app.route(path, methods)` | Universal decorator |
+| `@app.route(path, methods)` | Universal decorator for multiple methods |
 
 ---
 
@@ -167,8 +172,10 @@ async def get_user(request: Request):
 | `path` | `str` | Request path |
 | `query_string` | `str` | Query parameters |
 | `headers` | `Dict[str, str]` | Request headers |
-| `path_params` | `Dict[str, Any]` | Path parameters |
+| `headers_dict` | `Dict[str, str]` | Request headers as dictionary |
+| `path_params` | `Dict[str, Any]` | Path parameters (auto-converted) |
 | `scope` | `Dict` | ASGI scope |
+| `client` | `Tuple[str, int]` | Client (host, port) |
 
 #### Methods
 
@@ -179,12 +186,20 @@ async def get_user(request: Request):
 
 ---
 
-### Response
+### Response Classes
 
-Base HTTP response class.
+Base HTTP response classes.
 
 ```python
-from altapi.http import Response, JSONResponse, HTMLResponse
+from altapi.http import (
+    Response,
+    JSONResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    StreamingResponse,
+    FileResponse,
+    RedirectResponse,
+)
 ```
 
 #### JSONResponse
@@ -230,6 +245,11 @@ async def text(request):
     return PlainTextResponse("Hello, World!")
 ```
 
+**Parameters:**
+- `content` — text content
+- `status_code` — status code (default 200)
+- `headers` — headers (optional)
+
 #### StreamingResponse
 
 ```python
@@ -245,6 +265,12 @@ async def stream(request):
     return StreamingResponse(generate())
 ```
 
+**Parameters:**
+- `content` — async generator or callable returning async generator
+- `status_code` — status code (default 200)
+- `headers` — headers (optional)
+- `media_type` — media type (default "text/plain")
+
 #### FileResponse
 
 ```python
@@ -256,6 +282,18 @@ async def download(request):
     return FileResponse("path/to/file.pdf", filename="myfile.pdf")
 ```
 
+**Parameters:**
+- `path` — path to file
+- `status_code` — status code (default 200)
+- `headers` — headers (optional)
+- `media_type` — media type (auto-detected from extension)
+- `filename` — download filename (default: basename of path)
+
+**Features:**
+- Automatic MIME type detection
+- Range request support (partial content)
+- Last-Modified header
+
 #### RedirectResponse
 
 ```python
@@ -266,6 +304,11 @@ from altapi.http import RedirectResponse
 async def redirect(request):
     return RedirectResponse("https://example.com")
 ```
+
+**Parameters:**
+- `url` — redirect URL
+- `status_code` — status code (default 307)
+- `headers` — headers (optional)
 
 ---
 
@@ -284,6 +327,15 @@ async def echo(ws: WebSocket):
         text = await ws.receive_text()
         await ws.send_text(f"Echo: {text}")
 ```
+
+#### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `path` | `str` | WebSocket path |
+| `headers` | `Dict[str, str]` | Request headers |
+| `path_params` | `Dict[str, Any]` | Path parameters |
+| `state` | `WebSocketState` | Connection state |
 
 #### Methods
 
@@ -307,81 +359,6 @@ from altapi.websocket import WebSocketState
 # WebSocketState.CONNECTED — connection active
 # WebSocketState.DISCONNECTED — connection closed
 ```
-
----
-
-
-
----
-
-
-
-### @cache Decorator
-
-Decorator for caching function results.
-
-```python
-from altapi.caching import cache
-
-
-@app.get("/api/data")
-@cache(expires=3600)
-async def get_data(request):
-    return JSONResponse({"data": "cached"})
-```
-
-**Parameters:**
-- `expires` — Cache TTL in seconds (default: 300)
-- `key_prefix` — Prefix for cache key
-- `backend` — Cache backend name or instance
-
----
-
-## Rate Limiting (API Reference)
-
-### @rate_limit Decorator
-
-Decorator for rate limiting endpoints.
-
-```python
-from altapi.ratelimit import rate_limit
-
-
-@app.get("/api/data")
-@rate_limit(limit=10, period=60)  # 10 requests per minute
-async def get_data(request):
-    return JSONResponse({"data": "value"})
-```
-
-**Parameters:**
-- `limit` — Maximum number of requests allowed (default: 10)
-- `period` — Time period in seconds (default: 60)
-- `key_func` — Function to extract rate limit key from request
-- `skip_when` — Function to determine if rate limiting should be skipped
-
----
-
-### @rate_limit_batch Decorator
-
-Decorator for applying multiple rate limits to the same endpoint.
-
-```python
-from altapi.ratelimit import rate_limit_batch
-
-
-@app.get("/api/data")
-@rate_limit_batch([
-    (10, 60),      # 10 requests per minute
-    (100, 3600),   # 100 requests per hour
-    (1000, 86400)  # 1000 requests per day
-])
-async def get_data(request):
-    return JSONResponse({"data": "value"})
-```
-
-**Parameters:**
-- `limits` — List of (limit, period) tuples
-- `key_func` — Function to extract rate limit key
 
 ---
 
@@ -434,6 +411,13 @@ async def get_item(request: Request):
 async def get_score(request: Request):
     value = request.path_params["value"]  # float
     return JSONResponse({"score": value})
+
+
+# path parameter (captures rest of path)
+@app.get("/files/{path:path}")
+async def get_file(request: Request):
+    file_path = request.path_params["path"]  # str with slashes
+    return JSONResponse({"path": file_path})
 ```
 
 ### Synchronous Handlers
@@ -450,9 +434,21 @@ def sync_handler(request):
     return JSONResponse({"type": "sync"})
 ```
 
+### Universal Route Decorator
+
+```python
+@app.route("/api/multi", methods=["GET", "POST"])
+async def multi_handler(request):
+    if request.method == "GET":
+        return JSONResponse({"method": "GET"})
+    else:
+        data = await request.json()
+        return JSONResponse({"method": "POST", "data": data})
+```
+
 ---
 
-## WebSocket
+## WebSocket Support
 
 ### Basic Example
 
@@ -521,6 +517,23 @@ async def websocket_json(ws: WebSocket):
         await ws.send_json({"received": data, "status": "ok"})
 ```
 
+### Binary Data
+
+```python
+from altapi import AltAPI
+from altapi.websocket import WebSocket
+
+app = AltAPI()
+
+
+@app.websocket("/ws/binary")
+async def websocket_binary(ws: WebSocket):
+    await ws.accept()
+    while True:
+        data = await ws.receive_bytes()
+        await ws.send_bytes(data)
+```
+
 ---
 
 ## Middleware
@@ -531,7 +544,7 @@ AltAPI has middleware support:
 from altapi.middleware import Middleware, BaseMiddleware
 ```
 
-where `BaseMiddleware` is a class which inherits from:
+`BaseMiddleware` is a class which inherits from:
 
 ```python
 from altapi.middleware import BaseMiddleware
@@ -545,7 +558,7 @@ class BaseMiddleware:
         await self.app(scope, receive, send)
 ```
 
-example middleware:
+Example middleware:
 
 ```python
 import time
@@ -562,7 +575,7 @@ class TimingMiddleware(BaseMiddleware):
         print(f"[TIME] {scope.get('path')} took {time.time() - start:.4f}s")
 ```
 
-to use it:
+To use it:
 
 ```python
 from altapi import AltAPI
@@ -585,46 +598,43 @@ The simplest way to enable caching:
 
 ```python
 from altapi import AltAPI
+from altapi.http import JSONResponse
 from altapi.caching import cache
 
 app = AltAPI()
 
 
 @app.get("/api/data")
-@cache(expires=3600)
+@cache(expires=3600)  # Cache for 1 hour
 async def get_data(request):
     return JSONResponse({"data": "cached"})
 ```
 
 ### How It Works
 
-AltAPI uses a **centralized manager** for cache storage. This ensures operation in multi-worker mode without additional configuration.
+AltAPI uses **per-worker InMemoryCache** for zero IPC overhead. Each worker maintains its own cache, which is optimal for most use cases.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  Shared Manager Process                 │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │              Cache Store                        │    │
-│  │              (in-memory)                        │    │
-│  └─────────────────────────────────────────────────┘    │
-│                    TCP: 127.0.0.1:58000                 │
-└─────────────────────────────────────────────────────────┘
-           ▲                    ▲                    ▲
-           │                    │                    │
-    ┌──────┴──────┐      ┌──────┴──────┐      ┌──────┴──────┐
-    │  Worker 1   │      │  Worker 2   │      │  Worker 3   │
-    │  (uvicorn)  │      │  (uvicorn)  │      │  (uvicorn)  │
-    └─────────────┘      └─────────────┘      └─────────────┘
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│    Worker 1     │      │    Worker 2     │      │    Worker 3     │
+│  ┌───────────┐  │      │  ┌───────────┐  │      │  ┌───────────┐  │
+│  │   Cache   │  │      │  │   Cache   │  │      │  │   Cache   │  │
+│  │ (in-mem)  │  │      │  │ (in-mem)  │  │      │  │ (in-mem)  │  │
+│  └───────────┘  │      │  └───────────┘  │      │  └───────────┘  │
+│  (uvicorn)      │      │  (uvicorn)      │      │  (uvicorn)      │
+└─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
+
+For shared caching across workers, consider using a reverse proxy cache (e.g., Varnish) or external cache (e.g., Redis).
 
 ### Automatic Startup
 
-The manager starts **automatically** when calling `app.run()`:
+The caching system is **automatically** initialized when calling `app.run()`:
 
 ```python
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
-    # Manager started automatically!
+    # Caching initialized automatically!
 ```
 
 ### Using @cache Decorator
@@ -649,7 +659,8 @@ async def get_data(request):
 **Parameters:**
 - `expires` — Cache TTL in seconds (default: 300)
 - `key_prefix` — Prefix for cache key (optional)
-- `backend` — Cache backend name or instance (optional)
+- `backend` — Cache backend instance (optional)
+- `key_func` — Custom function to generate cache key (optional)
 
 ### Using app.cache() Method
 
@@ -695,6 +706,20 @@ class RedisCache(CacheBackend):
         pass
 ```
 
+### CacheMiddleware
+
+For automatic response caching via middleware:
+
+```python
+from altapi import AltAPI
+from altapi.middleware import Middleware
+from altapi.caching import CacheMiddleware
+
+app = AltAPI(middleware=[
+    Middleware(CacheMiddleware, cache_timeout=300)
+])
+```
+
 ---
 
 ## Rate Limiting
@@ -727,8 +752,10 @@ if __name__ == "__main__":
 
 - ✅ **Simple import** — just `from altapi.ratelimit import rate_limit`
 - ✅ **No configuration** — manager starts automatically at `app.run()`
-- ✅ **Multi-worker support** — all data stored in central process
+- ✅ **Multi-worker support** — all data stored in central process via shared manager
 - ✅ **Production ready** — works out of the box
+
+⚠️ **Warning:** Rate limiting adds overhead (approximately 9.5x slowdown on average). Use only when necessary.
 
 ### What Happens When Limit Exceeded
 
@@ -738,6 +765,12 @@ if __name__ == "__main__":
     "message": "Too many requests. Try again in 45 seconds."
 }
 ```
+
+Response includes headers:
+- `X-RateLimit-Limit` — Maximum requests per period
+- `X-RateLimit-Remaining` — Requests remaining
+- `X-RateLimit-Reset` — Reset time (Unix timestamp)
+- `Retry-After` — Seconds until reset (on 429)
 
 ---
 
@@ -987,7 +1020,7 @@ async def public_api(request):
 
 #### Architecture
 
-AltAPI uses a **centralized manager** for rate limit data storage. This ensures operation in multi-worker mode without additional configuration.
+AltAPI uses a **centralized shared manager** for rate limit data storage. This ensures operation in multi-worker mode without additional configuration.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1353,7 +1386,16 @@ if __name__ == "__main__":
 
 **Note:** When using `workers > 1`, the application file must be run as a module (not in REPL or interactive mode).
 
-### Using uvicorn Directly(not recommended)
+### GC Optimizations
+
+AltAPI applies GC optimizations automatically when the server starts:
+- Forced garbage collection
+- Object freezing
+- Increased GC thresholds
+
+These optimizations apply to all workers automatically.
+
+### Using uvicorn Directly (Not Recommended)
 
 ```python
 if __name__ == "__main__":
@@ -1400,9 +1442,7 @@ async def websocket_echo(ws: WebSocket):
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000)
 ```
 
 More examples available in `examples/` folder.
@@ -1449,11 +1489,18 @@ AltAPI/
 │   ├── app.py               # AltAPI application class
 │   ├── router.pyx           # Cython router implementation
 │   ├── http/                # HTTP components
+│   │   ├── request.py       # Request class
+│   │   └── responses.py     # Response classes
 │   ├── websocket/           # WebSocket support
+│   │   └── ws.py            # WebSocket class
 │   ├── middleware/          # Middleware system
+│   │   └── middleware.py    # BaseMiddleware, Middleware
 │   ├── templating/          # Jinja2 integration
+│   │   └── templates.py     # Jinja2Templates, render_template
 │   ├── caching/             # Caching system
+│   │   └── cache.py         # CacheBackend, InMemoryCache, CacheMiddleware
 │   ├── ratelimit/           # Rate limiting
+│   │   └── limit.py         # rate_limit, rate_limit_batch
 │   └── shared/              # Shared manager for multi-worker
 ├── examples/                # Example applications
 ├── test_app.py              # Integration tests
@@ -1481,5 +1528,5 @@ AGPLv3 - See [LICENSE.txt](LICENSE.txt) for details.
 ## See Also
 
 - [Middleware](#middleware) — for creating custom middleware
-- [WebSocket](#websocket-1) — for WebSocket support
+- [WebSocket Support](#websocket-support) — for WebSocket support
 - [Template Rendering](#template-rendering) — for Jinja2 templates
