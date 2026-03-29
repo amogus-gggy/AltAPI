@@ -1,12 +1,22 @@
 from altapi import AltAPI
-from altapi.http import JSONResponse
+from altapi.http import JSONResponse, PlainTextResponse
+from altapi.templating import render_template
 
 
-app = AltAPI()
+app = AltAPI(templates_directory="templates")
 
-@app.get("/")
+@app.get("/json")
 async def bench(request):
     return JSONResponse({"test":"test"})
 
+@app.get("/plaintext")
+async def bench2(request):
+    return PlainTextResponse("Plain text!")
+
+@app.get("/template")
+async def bench3(request):
+    return render_template("test.html")
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, workers=4)
+    app.run(host="0.0.0.0", port=8000, workers=8)

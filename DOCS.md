@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-- [Features](#features)
+
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
@@ -18,15 +18,6 @@
     - [FileResponse](#fileresponse)
     - [RedirectResponse](#redirectresponse)
   - [WebSocket](#websocket)
-  - [Caching](#caching-api)
-    - [CacheBackend](#cachebackend)
-    - [InMemoryCache](#inmemorycache)
-    - [CacheManager](#cachemanager)
-    - [CacheMiddleware](#cachemiddleware)
-    - [@cache](#cache-decorator)
-  - [Rate Limiting](#rate-limiting-api)
-    - [@rate_limit](#rate_limit-decorator)
-    - [@rate_limit_batch](#rate_limit_batch-decorator)
 - [Routing](#routing)
 - [WebSocket](#websocket-1)
 - [Middleware](#middleware)
@@ -319,110 +310,11 @@ from altapi.websocket import WebSocketState
 
 ---
 
-## Caching (API Reference)
 
-### CacheBackend
-
-Abstract base class for cache backends.
-
-```python
-from altapi.caching import CacheBackend
-
-
-class MyCache(CacheBackend):
-    async def get(self, key: str) -> Optional[Any]:
-        ...
-
-    async def set(self, key: str, value: Any, expires: int = None) -> None:
-        ...
-
-    async def delete(self, key: str) -> None:
-        ...
-
-    async def clear(self) -> None:
-        ...
-```
-
-#### Methods
-
-| Method | Description |
-|--------|-------------|
-| `async get(key)` | Get value from cache |
-| `async set(key, value, expires)` | Set value in cache |
-| `async delete(key)` | Delete value from cache |
-| `async clear()` | Clear all cache |
 
 ---
 
-### InMemoryCache
 
-In-memory cache backend implementation.
-
-```python
-from altapi.caching import InMemoryCache
-
-cache = InMemoryCache(max_size=1000)
-```
-
-**Parameters:**
-- `max_size` — Maximum number of entries (default: 1000)
-
----
-
-### CacheManager
-
-Manager for cache backends.
-
-```python
-from altapi.caching import CacheManager, InMemoryCache
-
-# Set default backend
-CacheManager.set_default_backend(InMemoryCache())
-
-# Register named backend
-CacheManager.register_backend("redis", redis_cache)
-
-# Get backend
-backend = CacheManager.get_backend()  # default
-backend = CacheManager.get_backend("redis")  # named
-```
-
-#### Methods
-
-| Method | Description |
-|--------|-------------|
-| `set_default_backend(backend)` | Set default cache backend |
-| `get_default_backend()` | Get default cache backend |
-| `register_backend(name, backend)` | Register named backend |
-| `get_backend(name)` | Get backend by name |
-
----
-
-### CacheMiddleware
-
-Middleware for automatic HTTP response caching.
-
-```python
-from altapi import AltAPI
-from altapi.middleware import Middleware
-from altapi.caching import CacheMiddleware
-
-app = AltAPI(middleware=[
-    Middleware(CacheMiddleware, cache_timeout=300)
-])
-```
-
-**Parameters:**
-- `cache_timeout` — Default cache TTL in seconds
-- `backend` — Cache backend instance
-
-#### Methods
-
-| Method | Description |
-|--------|-------------|
-| `register_handler(path, expires)` | Register route for caching |
-
----
 
 ### @cache Decorator
 
@@ -1461,12 +1353,12 @@ if __name__ == "__main__":
 
 **Note:** When using `workers > 1`, the application file must be run as a module (not in REPL or interactive mode).
 
-### Using uvicorn Directly
+### Using uvicorn Directly(not recommended)
 
 ```python
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("myapp:app", host="0.0.0.0", port=8000, workers=4)
+    uvicorn.run("myapp:app", host="0.0.0.0", port=8000)
 ```
 
 ---
