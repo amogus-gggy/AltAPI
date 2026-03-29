@@ -3,19 +3,19 @@ import inspect
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional, Dict, Any, Union
-from pathlib import Path
-from contextlib import asynccontextmanager
 
 from .http.responses import HTMLResponse
 
 from .router import Router
 from .websocket.ws import WebSocket
 from .http.request import Request
-from .http.responses import JSONResponse, FileResponse, PlainTextResponse
+from .http.responses import FileResponse
 from .middleware.middleware import Middleware, ASGIApp
-from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_405_BODY, DEFAULT_500_BODY
+from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
-from .caching.cache import CacheMiddleware, CacheManager, InMemoryCache, cache as cache_decorator, CacheBackend
+from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
+from .shared import start_manager, stop_manager, ManagerConnection, SharedRateLimitStorage
+# SharedCacheBackend removed - use InMemoryCache for per-worker caching
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
@@ -23,7 +23,7 @@ _sync_executor = ThreadPoolExecutor(max_workers=10)
 def _run_gc_optimize():
     """
     Garbage collector optimization.
-    
+
     Applies the following optimizations:
     - Forced garbage collection
     - Object freezing
@@ -39,22 +39,12 @@ def _run_gc_optimize():
     gc.set_threshold(allocs, gen1, gen2)
 
 
-async def _lifespan(app):
-    """
-    Common lifespan for all AltAPI instances with GC optimization.
-    
-    Called on each worker startup.
-    """
-    _run_gc_optimize()
-    yield
-
-
 class AltAPI:
     """
     Main AltAPI application class.
-    
+
     ASGI framework for building web applications with support for:
-    - HTTP routes (GET, POST, PUT, DELETE)
+    - HTTP routes (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT)
     - WebSocket connections
     - Middleware
     - Jinja2 templates
@@ -67,8 +57,9 @@ class AltAPI:
         middleware: List[Middleware] = None,
         templates_directory: Union[str, os.PathLike] = "templates",
         static_directory: Optional[Union[str, os.PathLike]] = None,
-        cache_backend: Optional[CacheBackend] = None,
         cache_timeout: int = 300,
+        shared_host: str = "127.0.0.1",
+        shared_port: int = 58000,
     ):
         """
         Initialize AltAPI application.
@@ -77,21 +68,31 @@ class AltAPI:
             middleware: List of middleware for the application
             templates_directory: Directory with Jinja2 templates
             static_directory: Directory with static files (optional)
-            cache_backend: Cache backend (optional)
             cache_timeout: Default cache lifetime in seconds
+            shared_host: Host for shared manager (default: 127.0.0.1)
+            shared_port: Port for shared manager (default: 58000)
         """
         self._router = Router()
         self._middlewares = middleware or []
         self._mounted_apps: Dict[str, Any] = {}
         self._static_dirs: Dict[str, str] = {}
+        self._shared_host = shared_host
+        self._shared_port = shared_port
+        self._manager_process = None
+        self._manager_connection: Optional[ManagerConnection] = None
+        self._app_built = False
 
         self._core = self._build_core()
-        self._app = self._build_middlewares(self._core)
+        self._app = self._core  # Will be built with middlewares in run()
         self._sync_executor = _sync_executor
 
-        # Initialize Jinja2 templates
+        # Initialize Jinja2 templates with optimized settings
         self._templates_directory = str(templates_directory)
-        self._templates = Jinja2Templates(self._templates_directory)
+        self._templates = Jinja2Templates(
+            self._templates_directory,
+            auto_reload=False,  # Disable auto-reload for production
+            cache_size=4096,    # Cache compiled templates
+        )
 
         # Set global templates directory for render_template
         set_default_templates_directory(self._templates_directory)
@@ -103,14 +104,27 @@ class AltAPI:
         else:
             self._static_directory = None
 
-        # Initialize caching (if backend specified)
-        self._cache_backend = cache_backend
-        if cache_backend is not None:
-            # Set as default backend
-            CacheManager.set_default_backend(cache_backend)
-            # Add CacheMiddleware automatically
-            self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
+        # Initialize per-worker in-memory cache (fast, no IPC overhead)
+        # Each worker has its own cache - no sharing between workers
+        self._cache_backend: Optional[InMemoryCache] = None
         self._cache_timeout = cache_timeout
+        self._cache_middleware: Optional[CacheMiddleware] = None
+        # Add CacheMiddleware to list (will be initialized in lifespan with InMemoryCache)
+        self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
+
+    async def _init_shared_resources(self):
+        """Initialize shared resources (called in lifespan)."""
+        # Initialize per-worker in-memory cache backend (fast, no IPC)
+        self._cache_backend = InMemoryCache()
+        CacheManager.set_default_backend(self._cache_backend)
+
+        # Initialize shared rate limiting (uses IPC manager)
+        self._manager_connection = self._get_manager_connection()
+
+        # Rebuild app with middlewares and register cache routes
+        if not self._app_built:
+            self._app = self._build_middlewares(self._core)
+            self._app_built = True
 
     @property
     def templates(self) -> Jinja2Templates:
@@ -123,9 +137,20 @@ class AltAPI:
         return self._static_directory
 
     @property
-    def cache_backend(self) -> Optional[CacheBackend]:
-        """Return cache backend (if configured)."""
+    def cache_backend(self) -> Optional[InMemoryCache]:
+        """Return per-worker in-memory cache backend."""
         return self._cache_backend
+
+    @property
+    def manager_connection(self) -> Optional[ManagerConnection]:
+        """Return shared manager connection (for rate limiting)."""
+        return self._manager_connection
+
+    def get_rate_limit_storage(self):
+        """Get rate limit storage for use with @rate_limit decorator."""
+        if self._manager_connection is None:
+            self._manager_connection = self._get_manager_connection()
+        return SharedRateLimitStorage(self._manager_connection)
 
     def route(self, path, methods=None):
         """
@@ -143,6 +168,27 @@ class AltAPI:
         def decorator(func):
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
+
+            # Register for caching if @cache decorator was applied
+            # Check the function itself first, then unwrap to find _cache_expires
+            check_func = func
+            cache_expires = None
+
+            # Check current function and wrapped chain for _cache_expires
+            while check_func is not None:
+                if hasattr(check_func, "_cache_expires"):
+                    cache_expires = check_func._cache_expires
+                    break
+                if hasattr(check_func, '__wrapped__'):
+                    check_func = check_func.__wrapped__
+                else:
+                    break
+
+            if cache_expires is not None:
+                if not hasattr(self, "_cache_routes"):
+                    self._cache_routes = []
+                self._cache_routes.append((path, cache_expires))
+
             return func
 
         return decorator
@@ -183,6 +229,51 @@ class AltAPI:
         """
         return self.route(path, ["DELETE"])
 
+    def patch(self, path):
+        """
+        Decorator for registering PATCH routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["PATCH"])
+
+    def head(self, path):
+        """
+        Decorator for registering HEAD routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["HEAD"])
+
+    def options(self, path):
+        """
+        Decorator for registering OPTIONS routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["OPTIONS"])
+
+    def trace(self, path):
+        """
+        Decorator for registering TRACE routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["TRACE"])
+
+    def connect(self, path):
+        """
+        Decorator for registering CONNECT routes.
+
+        Args:
+            path: Route path
+        """
+        return self.route(path, ["CONNECT"])
+
     def websocket(self, path):
         """
         Decorator for registering WebSocket routes.
@@ -211,12 +302,6 @@ class AltAPI:
             async def get_data(request):
                 return JSONResponse({"data": "cached"})
         """
-        # Find CacheMiddleware and register handler
-        for mw in self._middlewares:
-            if mw.middleware_cls == CacheMiddleware:
-                # Get middleware instance after build
-                pass
-
         # Store for later registration
         if not hasattr(self, "_cache_routes"):
             self._cache_routes = []
@@ -226,9 +311,7 @@ class AltAPI:
             # Add route as usual
             for m in ["GET"]:
                 self._router.add_route(path, m.upper(), func)
-
-            # Wrap function in cache
-            return cache_decorator(expires=expires)(func)
+            return func
 
         return decorator
 
@@ -246,63 +329,107 @@ class AltAPI:
         elif directory is not None:
             self._static_dirs[path] = str(directory)
 
+    def _get_manager_connection(self) -> ManagerConnection:
+        """Get or create manager connection."""
+        if self._manager_connection is None:
+            self._manager_connection = ManagerConnection(
+                host=self._shared_host,
+                port=self._shared_port,
+            )
+        return self._manager_connection
+
+    def start_manager_process(self) -> None:
+        """Start the shared manager process (for single-process mode with workers)."""
+        if self._manager_process is None:
+            self._manager_process = start_manager(
+                host=self._shared_host,
+                port=self._shared_port,
+            )
+
+    def stop_manager_process(self) -> None:
+        """Stop the shared manager process."""
+        if self._manager_process is not None:
+            stop_manager(self._manager_process)
+            self._manager_process = None
+
     def run(
         self,
         host: str = "0.0.0.0",
         port: int = 8000,
         workers: int = 1,
-        gc_optimize: bool = True,
         access_log: bool = True,
     ):
         """
         Run uvicorn server.
 
+        Automatically starts the shared manager process for cache and rate limiting.
+
         Args:
             host: Host to listen on
             port: Port to listen on
             workers: Number of worker processes
-            gc_optimize: Whether to optimize garbage collector
             access_log: Whether to enable request logging
         """
         import sys
         import uvicorn
 
-        # Generate import string for workers support
-        if workers > 1:
-            main_module = sys.modules.get("__main__")
-            if main_module and hasattr(main_module, "__file__") and main_module.__file__:
-                # Get absolute path to file
-                file_path = os.path.realpath(os.path.abspath(main_module.__file__))
-                module_name = os.path.splitext(os.path.basename(file_path))[0]
+        # Build middlewares with registered cache routes before starting
+        if not self._app_built:
+            self._app = self._build_middlewares(self._core)
+            self._app_built = True
 
-                # If this is __main__.py in a package
-                if module_name == "__main__":
-                    # Package name is the directory name
-                    package_name = os.path.basename(os.path.dirname(file_path))
-                    app_str = f"{package_name}:app"
+        # Start shared manager process (always enabled)
+        self.start_manager_process()
+
+        try:
+            # Generate import string for workers support
+            if workers > 1:
+                main_module = sys.modules.get("__main__")
+                if main_module and hasattr(main_module, "__file__") and main_module.__file__:
+                    file_path = os.path.realpath(os.path.abspath(main_module.__file__))
+                    module_name = os.path.splitext(os.path.basename(file_path))[0]
+
+                    if module_name == "__main__":
+                        package_name = os.path.basename(os.path.dirname(file_path))
+                        app_str = f"{package_name}:app"
+                    else:
+                        app_str = f"{module_name}:app"
                 else:
-                    # Regular module - use filename without extension
-                    app_str = f"{module_name}:app"
+                    app_str = "app:app"
             else:
-                app_str = "app:app"
-        else:
-            app_str = self
+                app_str = self
 
-        uvicorn.run(
-            app_str,
-            host=host,
-            port=port,
-            workers=workers,
-            access_log=access_log,
-            http="httptools",
-        )
+            uvicorn.run(
+                app_str,
+                host=host,
+                port=port,
+                workers=workers,
+                access_log=access_log,
+                http="httptools",
+                lifespan="on",
+            )
+        finally:
+            self.stop_manager_process()
 
     def _build_core(self):
         # Apply GC optimizations when creating the app (for each worker)
         _run_gc_optimize()
 
         async def app(scope, receive, send):
-            if scope["type"] == "http":
+            if scope["type"] == "lifespan":
+                # Handle lifespan protocol
+                while True:
+                    message = await receive()
+                    if message["type"] == "lifespan.startup":
+                        # Run GC optimization
+                        _run_gc_optimize()
+                        # Initialize shared resources
+                        await self._init_shared_resources()
+                        await send({"type": "lifespan.startup.complete"})
+                    elif message["type"] == "lifespan.shutdown":
+                        await send({"type": "lifespan.shutdown.complete"})
+                        return
+            elif scope["type"] == "http":
                 return await self._handle_http(scope, receive, send)
             elif scope["type"] == "websocket":
                 return await self._handle_ws(scope, receive, send)
@@ -310,18 +437,20 @@ class AltAPI:
         return app
 
     def _build_middlewares(self, app: ASGIApp) -> ASGIApp:
+        # Register cache routes before building middlewares
+        cache_middleware_instance = None
+        
         for mw in reversed(self._middlewares):
-            app = mw.build(app)
+            built = mw.build(app)
+            # Save cache middleware instance for later registration
+            if mw.middleware_cls == CacheMiddleware:
+                cache_middleware_instance = built
+            app = built
 
         # Register cache routes after creating middleware
-        if hasattr(self, "_cache_routes"):
-            for mw in self._middlewares:
-                if mw.middleware_cls == CacheMiddleware:
-                    # Get middleware instance
-                    middleware_instance = mw.build(app)
-                    for path, expires in self._cache_routes:
-                        middleware_instance.register_handler(path, expires)
-                    break
+        if hasattr(self, "_cache_routes") and cache_middleware_instance is not None:
+            for path, expires in self._cache_routes:
+                cache_middleware_instance.register_handler(path, expires)
 
         return app
 
@@ -373,7 +502,6 @@ class AltAPI:
 
             await response(scope, receive, send)
         except Exception as e:
-            print(f"\033[31mERROR:\033[37m {str(e)}\033[0m")
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
 
     async def _handle_ws(self, scope, receive, send):

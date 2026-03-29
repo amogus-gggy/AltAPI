@@ -9,7 +9,6 @@ from altapi.http import (
     HTMLResponse,
     PlainTextResponse,
     StreamingResponse,
-    FileResponse,
     RedirectResponse,
 )
 from altapi.websocket import WebSocket
@@ -29,7 +28,6 @@ os.makedirs(static_dir, exist_ok=True)
 app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
-    cache_backend=InMemoryCache(max_size=1000),
     cache_timeout=300
 )
 
@@ -48,7 +46,7 @@ async def hello(request):
 
 
 @app.get("/api/cached")
-@cache(expires=60)  # Кеш на 60 секунд
+@cache(expires=60)  # Cache for 60 seconds
 async def cached_endpoint(request):
     import time
     return JSONResponse({

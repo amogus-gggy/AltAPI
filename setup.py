@@ -17,7 +17,7 @@ extensions = [
 
 setup(
     name="altapi",
-    version="1.2.1",
+    version="1.3.0",
     author="amogus-gggy",
     description="A simple and fast ASGI microframework for Python with WebSocket support.",
     long_description=open("README.md", encoding="utf-8").read(),
@@ -28,7 +28,7 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: AGPLv3 License",
         "Operating System :: OS Independent",
     ],
     packages=find_packages(where="src"),
