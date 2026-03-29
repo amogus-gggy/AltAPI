@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "mcp__modelcontextprotocol-servers-sequentialthinking__sequentialthinking"
-    ]
-  },
-  "$version": 3
-}
