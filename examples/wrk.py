@@ -1,9 +1,10 @@
 from altapi import AltAPI
 from altapi.http import JSONResponse, PlainTextResponse
 from altapi.templating import render_template
+from pathlib import Path
 
 
-app = AltAPI(templates_directory="templates")
+app = AltAPI(templates_directory=Path(__file__).resolve().parent / "templates")
 
 @app.get("/json")
 async def bench(request):
