@@ -42,6 +42,20 @@ async def expensive_operation(request):
         "note": "First call takes 2 seconds, subsequent calls are instant (from cache)"
     })
 
+# Option 1: Using @cache decorator
+@app.get("/api/expensive/{id:int}")
+@cache(expires=300)  # Cache for 5 minutes
+async def expensive_operation(request):
+    """Expensive operation, result is cached."""
+    print("called")
+    await asyncio.sleep(2)  # Simulate long operation
+    return JSONResponse({
+        "message": "Expensive operation completed",
+        "timestamp": time.time(),
+        "note": "First call takes 2 seconds, subsequent calls are instant (from cache)",
+        "id": request.path_params["id"]
+    })
+
 
 # Option 2: Using app.cache()
 @app.cache("/api/data", expires=60)  # Cache for 1 minute
