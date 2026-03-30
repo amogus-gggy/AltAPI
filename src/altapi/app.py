@@ -14,8 +14,7 @@ from .middleware.middleware import Middleware, ASGIApp
 from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
-from .shared import start_manager, stop_manager, ManagerConnection, SharedRateLimitStorage
-# SharedCacheBackend removed - use InMemoryCache for per-worker caching
+# Rate limiting now uses shared memory - no network overhead
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
@@ -58,8 +57,6 @@ class AltAPI:
         templates_directory: Union[str, os.PathLike] = "templates",
         static_directory: Optional[Union[str, os.PathLike]] = None,
         cache_timeout: int = 300,
-        shared_host: str = "127.0.0.1",
-        shared_port: int = 58000,
     ):
         """
         Initialize AltAPI application.
@@ -69,17 +66,12 @@ class AltAPI:
             templates_directory: Directory with Jinja2 templates
             static_directory: Directory with static files (optional)
             cache_timeout: Default cache lifetime in seconds
-            shared_host: Host for shared manager (default: 127.0.0.1)
-            shared_port: Port for shared manager (default: 58000)
         """
         self._router = Router()
         self._middlewares = middleware or []
         self._mounted_apps: Dict[str, Any] = {}
         self._static_dirs: Dict[str, str] = {}
-        self._shared_host = shared_host
-        self._shared_port = shared_port
         self._manager_process = None
-        self._manager_connection: Optional[ManagerConnection] = None
         self._app_built = False
 
         self._core = self._build_core()
@@ -118,9 +110,6 @@ class AltAPI:
         self._cache_backend = InMemoryCache()
         CacheManager.set_default_backend(self._cache_backend)
 
-        # Initialize shared rate limiting (uses IPC manager)
-        self._manager_connection = self._get_manager_connection()
-
         # Rebuild app with middlewares and register cache routes
         if not self._app_built:
             self._app = self._build_middlewares(self._core)
@@ -140,17 +129,6 @@ class AltAPI:
     def cache_backend(self) -> Optional[InMemoryCache]:
         """Return per-worker in-memory cache backend."""
         return self._cache_backend
-
-    @property
-    def manager_connection(self) -> Optional[ManagerConnection]:
-        """Return shared manager connection (for rate limiting)."""
-        return self._manager_connection
-
-    def get_rate_limit_storage(self):
-        """Get rate limit storage for use with @rate_limit decorator."""
-        if self._manager_connection is None:
-            self._manager_connection = self._get_manager_connection()
-        return SharedRateLimitStorage(self._manager_connection)
 
     def route(self, path, methods=None):
         """
@@ -329,29 +307,6 @@ class AltAPI:
         elif directory is not None:
             self._static_dirs[path] = str(directory)
 
-    def _get_manager_connection(self) -> ManagerConnection:
-        """Get or create manager connection."""
-        if self._manager_connection is None:
-            self._manager_connection = ManagerConnection(
-                host=self._shared_host,
-                port=self._shared_port,
-            )
-        return self._manager_connection
-
-    def start_manager_process(self) -> None:
-        """Start the shared manager process (for single-process mode with workers)."""
-        if self._manager_process is None:
-            self._manager_process = start_manager(
-                host=self._shared_host,
-                port=self._shared_port,
-            )
-
-    def stop_manager_process(self) -> None:
-        """Stop the shared manager process."""
-        if self._manager_process is not None:
-            stop_manager(self._manager_process)
-            self._manager_process = None
-
     def run(
         self,
         host: str = "0.0.0.0",
@@ -361,8 +316,6 @@ class AltAPI:
     ):
         """
         Run uvicorn server.
-
-        Automatically starts the shared manager process for cache and rate limiting.
 
         Args:
             host: Host to listen on
@@ -377,9 +330,6 @@ class AltAPI:
         if not self._app_built:
             self._app = self._build_middlewares(self._core)
             self._app_built = True
-
-        # Start shared manager process (always enabled)
-        self.start_manager_process()
 
         try:
             # Generate import string for workers support
@@ -408,8 +358,8 @@ class AltAPI:
                 http="httptools",
                 lifespan="on",
             )
-        finally:
-            self.stop_manager_process()
+        except Exception:
+            raise
 
     def _build_core(self):
         # Apply GC optimizations when creating the app (for each worker)

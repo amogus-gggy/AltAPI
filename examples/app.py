@@ -14,6 +14,7 @@ from altapi.http import (
 from altapi.websocket import WebSocket
 from altapi.templating import Jinja2Templates
 from altapi.caching import InMemoryCache, cache
+from altapi.ratelimit import rate_limit
 import random
 import os
 
@@ -333,4 +334,4 @@ async def multiply(request):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, workers=2)
