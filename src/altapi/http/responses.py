@@ -101,9 +101,12 @@ class PlainTextResponse(Response):
 
 
 class RedirectResponse(Response):
-    """Redirect to another URL."""
+    """Redirect to another URL.
+    
+    Uses status code 303 (See Other) by default to redirect POST requests to GET.
+    """
 
-    def __init__(self, url, status_code=307, headers=None):
+    def __init__(self, url, status_code=303, headers=None):
         headers = headers or {}
         headers["location"] = url
         super().__init__(

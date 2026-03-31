@@ -37,6 +37,7 @@ from .ratelimit import (
     SharedMemoryRateLimitStorage as _SharedMemoryRateLimitStorage,
     RateLimitResult as _RateLimitResult,
 )
+from .depends import Depends as _Depends
 
 
 # Mapping of attribute names to their correct import paths and actual objects
@@ -70,6 +71,7 @@ _IMPORT_MAPPING = {
     "InMemoryRateLimitStorage": ("altapi.ratelimit", _InMemoryRateLimitStorage),
     "SharedMemoryRateLimitStorage": ("altapi.ratelimit", _SharedMemoryRateLimitStorage),
     "RateLimitResult": ("altapi.ratelimit", _RateLimitResult),
+    "Depends": ("altapi.depends", _Depends),
 }
 
 
@@ -121,4 +123,5 @@ __all__ = [
     "InMemoryRateLimitStorage",
     "SharedMemoryRateLimitStorage",
     "RateLimitResult",
+    "Depends",
 ]

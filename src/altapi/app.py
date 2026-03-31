@@ -14,6 +14,7 @@ from .middleware.middleware import Middleware, ASGIApp
 from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
+from .depends import Depends, DependencyInjector, get_dependencies_from_signature, cleanup_dependencies
 # Rate limiting now uses shared memory - no network overhead
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
@@ -440,19 +441,66 @@ class AltAPI:
 
         request = Request(scope, receive, params)
 
+        # Extract dependencies from handler signature
+        sig = inspect.signature(handler)
+        depends_map = get_dependencies_from_signature(sig)
+
+        # Create dependency injector for this request
+        injector = DependencyInjector(request=request)
+
         try:
-            if inspect.iscoroutinefunction(handler):
-                response = await handler(request)
+            # Solve all dependencies
+            solved_values = {}
+            for param_name, depends in depends_map.items():
+                solved_values[param_name] = await injector.solve(depends.dependency)
+
+            # Call handler with solved dependencies
+            if depends_map:
+                # Merge solved dependencies with request and path_params
+                call_kwargs = {**solved_values}
+                
+                # Add path_params to kwargs only if not already provided by DI
+                handler_params = list(sig.parameters.keys())
+                for param_name in handler_params:
+                    if param_name == 'request':
+                        continue
+                    # Skip if already in solved_values (from DI)
+                    if param_name not in call_kwargs and param_name in params:
+                        call_kwargs[param_name] = params[param_name]
+                
+                # Check if handler expects 'request' as first argument
+                if 'request' in handler_params:
+                    call_args = (request,)
+                else:
+                    call_args = ()
+                
+                if inspect.iscoroutinefunction(handler):
+                    response = await handler(*call_args, **call_kwargs)
+                else:
+                    response = await asyncio.get_running_loop().run_in_executor(
+                        self._sync_executor,
+                        handler,
+                        *call_args,
+                        **call_kwargs,
+                    )
             else:
-                response = await asyncio.get_running_loop().run_in_executor(
-                    self._sync_executor,
-                    handler,
-                    request,
-                )
+                # No dependencies - call as before
+                if inspect.iscoroutinefunction(handler):
+                    response = await handler(request)
+                else:
+                    response = await asyncio.get_running_loop().run_in_executor(
+                        self._sync_executor,
+                        handler,
+                        request,
+                    )
 
             await response(scope, receive, send)
         except Exception as e:
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
+            raise
+        finally:
+            # Cleanup generator-based dependencies
+            await injector.cleanup()
 
     async def _handle_ws(self, scope, receive, send):
         path = scope.get("path", "/")
