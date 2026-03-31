@@ -24,6 +24,7 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 - Added examples:
   - 'examples/webapp.py' - full user managment system
 - Fixed cleanup guarantees — `finally` blocks now always execute even on handler errors
+- RedirectResponse returning 303 code, instead of 307
 
 ### v1.3.0
 - Added rate limiting with `@rate_limit` and `@rate_limit_batch` decorators
