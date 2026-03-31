@@ -6,6 +6,7 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 [![Python](https://img.shields.io/pypi/pyversions/altapi.svg)](https://pypi.org/project/altapi/)
 [![License](https://img.shields.io/badge/license-AGPLv3-green.svg)](https://github.com/amogus-gggy/AltAPI/blob/main/LICENSE.txt)
 [![Documentation](https://img.shields.io/badge/docs-DOCS.md-blue.svg)](https://github.com/amogus-gggy/AltAPI/blob/main/DOCS.md)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/altapi?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/altapi)
 
 ## Changelog
 
