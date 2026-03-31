@@ -2,9 +2,9 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i class="bi bi-people-fill me-2"></i>Пользователи</h1>
+    <h1><i class="bi bi-people-fill me-2"></i>Users</h1>
     <a href="/users/new" class="btn btn-primary">
-        <i class="bi bi-plus-lg me-1"></i> Добавить
+        <i class="bi bi-plus-lg me-1"></i> Add User
     </a>
 </div>
 
@@ -16,11 +16,11 @@
                 <thead class="table-light">
                     <tr>
                         <th>#</th>
-                        <th>Пользователь</th>
+                        <th>User</th>
                         <th>Email</th>
-                        <th>Возраст</th>
-                        <th>Город</th>
-                        <th class="text-end">Действия</th>
+                        <th>Age</th>
+                        <th>City</th>
+                        <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -39,7 +39,7 @@
                         </td>
                         <td>
                             {% if user.age %}
-                                <span class="badge bg-secondary">{{ user.age }} лет</span>
+                                <span class="badge bg-secondary">{{ user.age }} years</span>
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
@@ -53,16 +53,16 @@
                         </td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm" role="group">
-                                <a href="/users/{{ user.id }}/edit" 
+                                <a href="/users/{{ user.id }}/edit"
                                    class="btn btn-outline-primary action-btn"
-                                   title="Редактировать">
+                                   title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
-                                <form method="POST" action="/users/{{ user.id }}/delete" 
+                                <form method="POST" action="/users/{{ user.id }}/delete"
                                       style="display: inline;"
-                                      onsubmit="return confirm('Удалить пользователя {{ user.name }}?')">
+                                      onsubmit="return confirm('Delete user {{ user.name }}?')">
                                     <button type="submit" class="btn btn-outline-danger action-btn"
-                                            title="Удалить">
+                                            title="Delete">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
@@ -74,14 +74,14 @@
             </table>
         </div>
         <div class="text-muted small">
-            <i class="bi bi-database me-1"></i>Всего: {{ users|length }}
+            <i class="bi bi-database me-1"></i>Total: {{ users|length }}
         </div>
     </div>
 </div>
 {% else %}
 <div class="alert alert-info">
-    <i class="bi bi-info-circle me-2"></i>Нет пользователей. 
-    <a href="/users/new">Добавьте первого!</a>
+    <i class="bi bi-info-circle me-2"></i>No users yet.
+    <a href="/users/new">Add the first one!</a>
 </div>
 {% endif %}
 {% endblock %}

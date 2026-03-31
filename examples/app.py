@@ -165,11 +165,11 @@ async def chat_page(request):
             const ws = new WebSocket("ws://" + location.host + "/ws/chat");
             const messages = document.getElementById("messages");
             const input = document.getElementById("messageInput");
-            
+
             ws.onopen = () => {
                 messages.innerHTML += '<div class="system">Connected to chat!</div>';
             };
-            
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 const div = document.createElement("div");
@@ -181,11 +181,11 @@ async def chat_page(request):
                 messages.appendChild(div);
                 messages.scrollTop = messages.scrollHeight;
             };
-            
+
             ws.onclose = () => {
                 messages.innerHTML += '<div class="system">Disconnected from chat</div>';
             };
-            
+
             function sendMessage() {
                 const text = input.value.trim();
                 if (text) {
@@ -193,7 +193,7 @@ async def chat_page(request):
                     input.value = "";
                 }
             }
-            
+
             input.addEventListener("keypress", (e) => {
                 if (e.key === "Enter") sendMessage();
             });

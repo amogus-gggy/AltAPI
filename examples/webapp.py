@@ -55,11 +55,11 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] == 0:
         sample_users = [
-            ("Иван Петров", "ivan@example.com", 28, "Москва"),
-            ("Мария Сидорова", "maria@example.com", 34, "Санкт-Петербург"),
-            ("Алексей Смирнов", "alex@example.com", 22, "Казань"),
-            ("Елена Козлова", "elena@example.com", 45, "Новосибирск"),
-            ("Дмитрий Волков", "dmitry@example.com", 31, "Екатеринбург"),
+            ("John Doe", "john@example.com", 28, "New York"),
+            ("Jane Smith", "jane@example.com", 34, "Los Angeles"),
+            ("Bob Wilson", "bob@example.com", 22, "Chicago"),
+            ("Alice Brown", "alice@example.com", 45, "Houston"),
+            ("Charlie Davis", "charlie@example.com", 31, "Phoenix"),
         ]
         cursor.executemany(
             "INSERT INTO users (name, email, age, city) VALUES (?, ?, ?, ?)",
@@ -108,7 +108,7 @@ async def home(request, db=Depends(get_db)):
         {
             "request": request,
             "users": users,
-            "title": "Пользователи",
+            "title": "Users",
         }
     )
 
@@ -120,7 +120,7 @@ async def new_user_form(request):
         "user_form.html",
         {
             "request": request,
-            "title": "Новый пользователь",
+            "title": "New User",
             "action": "/users",
             "user": None,
         }
@@ -162,12 +162,12 @@ async def edit_user_form(request, id: int, db=Depends(get_db)):
     
     if not user:
         return HTMLResponse("User not found", status_code=404)
-    
+
     return templates.TemplateResponse(
         "user_form.html",
         {
             "request": request,
-            "title": f"Редактировать: {user['name']}",
+            "title": f"Edit: {user['name']}",
             "action": f"/users/{id}",
             "user": dict(user),
         }
@@ -280,7 +280,7 @@ async def api_delete_user(id: int, db=Depends(get_db)):
 if __name__ == "__main__":
     init_db()
     print("\n" + "="*50)
-    print("🚀 Запуск сервера...")
+    print("🚀 Starting server...")
     print("📱 Web UI: http://localhost:8000")
     print("🔧 API:    http://localhost:8000/api/users")
     print("="*50 + "\n")
