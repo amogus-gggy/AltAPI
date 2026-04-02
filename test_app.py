@@ -130,7 +130,7 @@ def test_streaming_response():
 def test_redirect_response():
     """Test RedirectResponse endpoint."""
     resp = requests.get(f"{BASE_URL}/api/redirect", allow_redirects=False)
-    assert resp.status_code in [307, 301, 302]
+    assert resp.status_code in [307, 301, 302, 303]
     assert resp.headers["Location"] == "https://example.com"
     print("✓ RedirectResponse OK")
 

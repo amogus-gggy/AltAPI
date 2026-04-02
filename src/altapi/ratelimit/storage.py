@@ -241,36 +241,45 @@ class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
 
     def _ensure_initialized(self) -> None:
         """Ensure shared memory is initialized."""
-        create = False
+        if self._shm is not None:
+            return
 
         try:
+            # Try attach first
             self._shm = shm.SharedMemory(name=self.name)
-            # Check if already initialized
+
             magic = self._read_bytes(0, 4)
             if magic != self.MAGIC:
-                # Corrupted - recreate
                 self._shm.close()
                 self._shm.unlink()
-                create = True
-            else:
-                # Verify version
-                version = struct.unpack('I', self._read_bytes(4, 4))[0]
-                if version != self.VERSION:
-                    self._shm.close()
-                    self._shm.unlink()
-                    create = True
-        except FileNotFoundError:
-            create = True
-        except Exception:
-            create = True
+                raise FileNotFoundError
 
-        if create:
+            version = struct.unpack('I', self._read_bytes(4, 4))[0]
+            if version != self.VERSION:
+                self._shm.close()
+                self._shm.unlink()
+                raise FileNotFoundError
+
+            self._created = False
+            return
+
+        except FileNotFoundError:
+            pass
+
+        # Try creating
+        try:
             self._shm = shm.SharedMemory(
                 name=self.name,
                 create=True,
                 size=self._total_size
             )
             self._initialize()
+            self._created = True
+
+        except FileExistsError:
+            # Another process created it meanwhile, attach instead
+            self._shm = shm.SharedMemory(name=self.name)
+            self._created = False
 
     def _get_or_create_key(self, key: str, period: float) -> int:
         """Get or create key index. Returns index into key array."""
