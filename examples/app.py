@@ -14,6 +14,7 @@ from altapi.http import (
 from altapi.websocket import WebSocket
 from altapi.templating import Jinja2Templates
 from altapi.caching import InMemoryCache, cache
+from altapi.ratelimit import rate_limit
 import random
 import os
 
@@ -164,11 +165,11 @@ async def chat_page(request):
             const ws = new WebSocket("ws://" + location.host + "/ws/chat");
             const messages = document.getElementById("messages");
             const input = document.getElementById("messageInput");
-            
+
             ws.onopen = () => {
                 messages.innerHTML += '<div class="system">Connected to chat!</div>';
             };
-            
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 const div = document.createElement("div");
@@ -180,11 +181,11 @@ async def chat_page(request):
                 messages.appendChild(div);
                 messages.scrollTop = messages.scrollHeight;
             };
-            
+
             ws.onclose = () => {
                 messages.innerHTML += '<div class="system">Disconnected from chat</div>';
             };
-            
+
             function sendMessage() {
                 const text = input.value.trim();
                 if (text) {
@@ -192,7 +193,7 @@ async def chat_page(request):
                     input.value = "";
                 }
             }
-            
+
             input.addEventListener("keypress", (e) => {
                 if (e.key === "Enter") sendMessage();
             });
@@ -333,4 +334,4 @@ async def multiply(request):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000, workers=2)

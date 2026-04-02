@@ -17,7 +17,7 @@ extensions = [
 
 setup(
     name="altapi",
-    version="1.3.0",
+    version="1.4.0",
     author="amogus-gggy",
     description="A simple and fast ASGI microframework for Python with WebSocket support.",
     long_description=open("README.md", encoding="utf-8").read(),
@@ -46,6 +46,7 @@ setup(
         "uvicorn[standard]>=0.30.0",
         "anyio>=4.0.0",
         "jinja2>=3.0.0",
-        "ujson"
+        "ujson",
+        "cython>=3.0.0",
     ],
 )

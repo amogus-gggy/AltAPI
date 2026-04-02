@@ -1,86 +1,60 @@
 """
 Rate limiting module with decorator support.
 
-Provides rate limiting functionality similar to SlowAPI with @rate_limit decorator.
-Uses shared storage by default for multi-worker support.
+Provides rate limiting functionality using shared memory for multi-process support.
+No network overhead - uses multiprocessing.shared_memory for IPC.
 """
-_WARNED = False
+
 import asyncio
 import time
 import warnings
-from abc import ABC, abstractmethod
-from collections import defaultdict, deque
-from dataclasses import dataclass
 from functools import wraps
-from typing import Callable, Deque, Dict, List, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 from ..http.responses import JSONResponse
-from ..shared import ManagerConnection, SharedRateLimitStorage
+from .storage import (
+    BaseRateLimitStorage,
+    InMemoryRateLimitStorage,
+    SharedMemoryRateLimitStorage,
+    RateLimitResult,
+)
 
 
+# Global storage instance (lazy initialized)
+_storage: Optional[BaseRateLimitStorage] = None
+_use_shared_memory = True  # Use shared memory for multi-process support
 
 
-# Global shared storage instance (lazy initialized)
-_shared_storage: Optional[SharedRateLimitStorage] = None
-_manager_connection: Optional[ManagerConnection] = None
+def _get_storage() -> BaseRateLimitStorage:
+    """Get or create rate limit storage instance."""
+    global _storage
+
+    if _storage is None:
+        if _use_shared_memory:
+            _storage = SharedMemoryRateLimitStorage()
+        else:
+            _storage = InMemoryRateLimitStorage()
+
+    return _storage
 
 
-def _get_shared_storage() -> SharedRateLimitStorage:
-    """Get or create shared storage instance."""
-    global _shared_storage, _manager_connection
-    
-    if _shared_storage is None:
-        _manager_connection = ManagerConnection()
-        _shared_storage = SharedRateLimitStorage(_manager_connection)
-    
-    return _shared_storage
+def set_storage(storage: BaseRateLimitStorage) -> None:
+    """Set custom rate limit storage."""
+    global _storage
+    _storage = storage
 
 
-@dataclass
-class RateLimitResult:
-    """Result of a rate limit check."""
-    allowed: bool
-    remaining: int
-    limit: int
-    reset: float
+def use_shared_memory(enabled: bool = True) -> None:
+    """
+    Enable or disable shared memory mode.
 
-
-class BaseRateLimitStorage(ABC):
-    """Abstract base class for rate limit storage."""
-
-    @abstractmethod
-    async def check_rate_limit(
-        self,
-        key: str,
-        limit: int,
-        period: float
-    ) -> RateLimitResult:
-        """
-        Check rate limit for a key.
-
-        Args:
-            key: Unique identifier (e.g., IP address)
-            limit: Maximum requests allowed
-            period: Time period in seconds
-
-        Returns:
-            RateLimitResult with allowed status and metadata
-        """
-        pass
-
-    @abstractmethod
-    async def increment(self, key: str, period: float) -> int:
-        """
-        Increment request count for a key.
-
-        Args:
-            key: Unique identifier
-            period: Time period in seconds
-
-        Returns:
-            Current request count
-        """
-        pass
+    Args:
+        enabled: True to use shared memory (multi-process),
+                 False for in-memory (single-process)
+    """
+    global _use_shared_memory, _storage
+    _use_shared_memory = enabled
+    _storage = None  # Reset to apply on next use
 
 
 def rate_limit(
@@ -92,7 +66,7 @@ def rate_limit(
     """
     Decorator for rate limiting endpoints.
 
-    Uses shared storage by default for multi-worker support.
+    Uses shared memory by default for multi-process support.
 
     ⚠️ WARNING: Rate limiting adds overhead and can significantly slow down endpoints.
 
@@ -112,17 +86,7 @@ def rate_limit(
         async def get_data(request):
             return JSONResponse({"data": "value"})
     """
-    global _WARNED
-    if _WARNED == False:
-        warnings.warn(
-            "Rate limiting adds overhead and can significantly slow down endpoints. "
-            "Use only when necessary.",
-            UserWarning,
-            stacklevel=2
-        )
-        _WARNED = True
-
-    storage = _get_shared_storage()
+    storage = _get_storage()
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -150,31 +114,21 @@ def rate_limit(
 
             # Check rate limit
             result = await storage.check_rate_limit(key, limit, period)
-            
-            # Handle both tuple and RateLimitResult
-            if isinstance(result, tuple):
-                allowed, remaining, reset = result
-                limit_val = limit
-            else:
-                allowed = result.allowed
-                remaining = result.remaining
-                reset = result.reset
-                limit_val = result.limit
 
-            if not allowed:
+            if not result.allowed:
                 # Rate limit exceeded
                 response = JSONResponse(
                     {
                         "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Try again in {int(reset - time.time())} seconds.",
+                        "message": f"Too many requests. Try again in {int(result.reset - time.time())} seconds.",
                     },
                     status_code=429,
                 )
                 # Add rate limit headers
-                response.headers["X-RateLimit-Limit"] = str(limit_val)
+                response.headers["X-RateLimit-Limit"] = str(result.limit)
                 response.headers["X-RateLimit-Remaining"] = "0"
-                response.headers["X-RateLimit-Reset"] = str(int(reset))
-                response.headers["Retry-After"] = str(int(reset - time.time()))
+                response.headers["X-RateLimit-Reset"] = str(int(result.reset))
+                response.headers["Retry-After"] = str(int(result.reset - time.time()))
                 return response
 
             # Increment counter
@@ -190,9 +144,9 @@ def rate_limit(
 
             # Add rate limit headers to response
             if hasattr(response, "headers"):
-                response.headers["X-RateLimit-Limit"] = str(limit_val)
-                response.headers["X-RateLimit-Remaining"] = str(remaining - 1)
-                response.headers["X-RateLimit-Reset"] = str(int(reset))
+                response.headers["X-RateLimit-Limit"] = str(result.limit)
+                response.headers["X-RateLimit-Remaining"] = str(result.remaining - 1)
+                response.headers["X-RateLimit-Reset"] = str(int(result.reset))
 
             return response
 
@@ -202,13 +156,13 @@ def rate_limit(
 
 
 def rate_limit_batch(
-    limits: List[Tuple[int, float]],
+    limits: list,
     key_func: Optional[Callable] = None,
 ):
     """
     Decorator for multiple rate limits on the same endpoint.
 
-    Uses shared storage by default.
+    Uses shared memory by default.
 
     ⚠️ WARNING: Rate limiting adds overhead and can significantly slow down endpoints.
 
@@ -225,17 +179,7 @@ def rate_limit_batch(
         async def my_endpoint(request):
             ...
     """
-    global _WARNED
-    if not _WARNED:
-        warnings.warn(
-            "Rate limiting adds overhead and can significantly slow down endpoints.(On average by 9.5 times)"
-            "Use only when necessary.",
-            UserWarning,
-            stacklevel=2
-        )
-        _WARNED = True
-
-    storage = _get_shared_storage()
+    storage = _get_storage()
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -260,22 +204,14 @@ def rate_limit_batch(
 
             for limit, period in limits:
                 result = await storage.check_rate_limit(key, limit, period)
-                
-                # Handle both tuple and RateLimitResult
-                if isinstance(result, tuple):
-                    allowed, remaining, reset = result
-                else:
-                    allowed = result.allowed
-                    remaining = result.remaining
-                    reset = result.reset
-                
-                if not allowed:
+
+                if not result.allowed:
                     exceeded_limit = limit
-                    exceeded_reset = reset
+                    exceeded_reset = result.reset
                     break
 
-                min_remaining = min(min_remaining, remaining)
-                min_reset = min(min_reset, reset)
+                min_remaining = min(min_remaining, result.remaining)
+                min_reset = min(min_reset, result.reset)
 
             if exceeded_limit is not None:
                 response = JSONResponse(
@@ -316,19 +252,13 @@ def rate_limit_batch(
     return decorator
 
 
-# Import for shared storage support
-try:
-    from ..shared import SharedRateLimitStorage, ManagerConnection
-except ImportError:
-    SharedRateLimitStorage = None  # type: ignore
-    ManagerConnection = None  # type: ignore
-
 __all__ = [
     "rate_limit",
     "rate_limit_batch",
     "BaseRateLimitStorage",
     "InMemoryRateLimitStorage",
+    "SharedMemoryRateLimitStorage",
     "RateLimitResult",
-    "SharedRateLimitStorage",
-    "ManagerConnection",
+    "set_storage",
+    "use_shared_memory",
 ]

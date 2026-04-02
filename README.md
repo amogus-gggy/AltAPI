@@ -10,16 +10,28 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 
 ## Changelog
 
+### v1.4.0
+- Added **Dependency Injection** system with automatic cleanup:
+  - Generator-based dependencies with `yield` for resource management
+  - Nested dependencies (dependencies can depend on other dependencies)
+  - Per-request caching of dependencies
+  - Async dependency support
+  - Automatic `Request` injection into dependencies
+- Added **Request State** (`request.state`) for passing data between middleware and handlers
+- **Rate Limiting optimized** — migrated to **Shared Memory** architecture:
+  - Zero network overhead for multi-worker synchronization
+  - Fixed race conditions in request counting
+  - Memory leak fixes in storage backends
+- Added examples:
+  - 'examples/webapp.py' - full user managment system
+- Fixed cleanup guarantees — `finally` blocks now always execute even on handler errors
+- RedirectResponse returning 303 code, instead of 307
+
 ### v1.3.0
-- Added rate limiting with `@rate_limit` and `@rate_limit_batch` decorators(right now, please dont use them, they are very unoptimized)
+- Added rate limiting with `@rate_limit` and `@rate_limit_batch` decorators
 - Added shared manager for multi-worker rate limiting support
 - Added support for all HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT
 
-
-### v1.2.0
-- Added `workers` parameter to `app.run()` for multi-process support
-- Added `access_log` parameter to enable/disable request logging
-- GC optimizations now apply to all workers automatically
 
 
 ## Installation
@@ -76,7 +88,9 @@ uvicorn app:app --reload
 - ✅ Built-in server (`app.run()`) with multi-worker support
 - ✅ Jinja2 templates
 - ✅ Response caching with per-worker InMemoryCache
-- ✅ Rate limiting with shared manager
+- ✅ Rate limiting with **Shared Memory** optimization
+- ✅ **Dependency Injection** with automatic cleanup
+- ✅ **Request State** for middleware-to-handler data passing
 - ✅ Static file mounting
 - ✅ Optimized Cython router
 - ✅ GC optimizations for better performance
@@ -172,6 +186,37 @@ from altapi.ratelimit import rate_limit_batch
 async def strict_endpoint(request):
     return JSONResponse({"data": "rate limited"})
 ```
+
+### Dependency Injection
+
+```python
+from altapi import AltAPI
+from altapi.http import JSONResponse
+from altapi.depends import Depends
+import sqlite3
+
+
+def get_db():
+    """Generator-based dependency with automatic cleanup."""
+    conn = sqlite3.connect("app.db")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def get_user_repo(db=Depends(get_db)):
+    """Nested dependency."""
+    return UserRepository(db)
+
+
+@app.get("/users")
+async def list_users(repo=Depends(get_user_repo)):
+    users = repo.get_all()
+    return JSONResponse({"users": users})
+```
+
+See full example: `examples/database_example.py`
 
 ### Jinja2 Templates
 

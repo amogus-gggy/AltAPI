@@ -1,8 +1,8 @@
 """
 Rate limiting module for AltAPI.
 
-Provides rate limiting with decorator support, similar to SlowAPI.
-Uses shared storage by default for multi-worker support.
+Provides rate limiting with decorator support using shared memory for multi-process IPC.
+No network overhead - uses multiprocessing.shared_memory.
 
 Example usage:
     from altapi import AltAPI
@@ -19,7 +19,13 @@ Example usage:
 from .limit import (
     rate_limit,
     rate_limit_batch,
+    set_storage,
+    use_shared_memory,
+)
+from .storage import (
     BaseRateLimitStorage,
+    InMemoryRateLimitStorage,
+    SharedMemoryRateLimitStorage,
     RateLimitResult,
 )
 
@@ -27,5 +33,9 @@ __all__ = [
     "rate_limit",
     "rate_limit_batch",
     "BaseRateLimitStorage",
+    "InMemoryRateLimitStorage",
+    "SharedMemoryRateLimitStorage",
     "RateLimitResult",
+    "set_storage",
+    "use_shared_memory",
 ]

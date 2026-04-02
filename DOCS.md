@@ -21,6 +21,7 @@
 - [Routing](#routing)
 - [WebSocket Support](#websocket-support)
 - [Middleware](#middleware)
+- [Dependency Injection](#dependency-injection)
 - [Caching](#caching)
 - [Rate Limiting](#rate-limiting)
 - [Mounting Static Files and Applications](#mounting-static-files-and-applications)
@@ -47,6 +48,9 @@
 - ✅ Optimized Cython router
 - ✅ GC optimizations for better performance
 - ✅ Pre-encoded headers for common media types
+- ✅ **Dependency Injection** with automatic cleanup
+- ✅ **Request state** for passing data between middleware and handlers
+- ✅ **Form data parsing** (urlencoded and multipart)
 
 ---
 
@@ -176,6 +180,7 @@ async def get_user(request: Request):
 | `path_params` | `Dict[str, Any]` | Path parameters (auto-converted) |
 | `scope` | `Dict` | ASGI scope |
 | `client` | `Tuple[str, int]` | Client (host, port) |
+| `state` | `RequestState` | Per-request state storage |
 
 #### Methods
 
@@ -183,6 +188,7 @@ async def get_user(request: Request):
 |--------|-------------|
 | `async json()` | Parse request body as JSON |
 | `async text()` | Get request body as text |
+| `async form()` | Parse form data (urlencoded or multipart) |
 
 ---
 
@@ -307,8 +313,13 @@ async def redirect(request):
 
 **Parameters:**
 - `url` — redirect URL
-- `status_code` — status code (default 307)
+- `status_code` — status code (default **303** for POST→GET redirect)
 - `headers` — headers (optional)
+
+**Status Codes:**
+- `303` (default) — "See Other", redirects POST to GET (recommended)
+- `307` — "Temporary Redirect", preserves original method
+- `308` — "Permanent Redirect", preserves original method
 
 ---
 
@@ -584,6 +595,262 @@ from altapi.middleware import Middleware
 app = AltAPI(middleware=[
     Middleware(TimingMiddleware)
 ])
+```
+
+---
+
+## Dependency Injection
+
+AltAPI has built-in **Dependency Injection (DI)** system for managing resources and sharing logic between handlers.
+
+### Quick Start
+
+The simplest way to use DI:
+
+```python
+from altapi import AltAPI
+from altapi.http import JSONResponse
+from altapi.depends import Depends
+
+app = AltAPI()
+
+
+# Create a dependency (e.g., database connection)
+def get_db():
+    import sqlite3
+    conn = sqlite3.connect("mydb.db")
+    try:
+        yield conn  # Provide the resource
+    finally:
+        conn.close()  # Cleanup automatically
+
+
+# Use dependency in handler
+@app.get("/users")
+async def list_users(db=Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users")
+    users = cursor.fetchall()
+    return JSONResponse({"users": users})
+```
+
+### How It Works
+
+```
+Request → AltAPI → Resolve Depends(get_db)
+                  ↓
+            Call get_db()
+                  ↓
+            yield conn ← Return to handler
+                  ↓
+            Handler uses conn
+                  ↓
+            After handler: finally block
+                  ↓
+            conn.close() ← Automatic cleanup
+```
+
+### Dependency Function Types
+
+#### 1. Generator-based (with cleanup)
+
+```python
+def get_db():
+    conn = create_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()  # Guaranteed cleanup
+```
+
+#### 2. Simple function (no cleanup needed)
+
+```python
+def get_settings():
+    return Settings.load_from_env()
+```
+
+#### 3. Async dependency
+
+```python
+async def get_redis():
+    redis = await aioredis.create_redis()
+    try:
+        yield redis
+    finally:
+        redis.close()
+        await redis.wait_closed()
+```
+
+### Nested Dependencies
+
+Dependencies can depend on other dependencies:
+
+```python
+def get_db():
+    conn = sqlite3.connect("mydb.db")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def get_repository(db=Depends(get_db)):
+    return UserRepository(db)
+
+
+@app.get("/users/{id:int}")
+async def get_user(id: int, repo=Depends(get_repository)):
+    user = await repo.get_by_id(id)
+    return JSONResponse(user)
+```
+
+### Request in Dependencies
+
+`Request` is automatically injected if the dependency expects it:
+
+```python
+from altapi.http import Request
+
+
+def get_current_user(request: Request, db=Depends(get_db)):
+    token = request.headers.get("Authorization")
+    if not token:
+        return None
+    # Query user from DB
+    return db.get_user_by_token(token)
+
+
+@app.get("/profile")
+async def profile(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse(user)
+```
+
+### Caching
+
+Dependencies are **cached per request** by default:
+
+```python
+def get_db():
+    print("Creating connection")  # ← Called only once per request
+    conn = sqlite3.connect("mydb.db")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@app.get("/users")
+async def list_users(db1=Depends(get_db), db2=Depends(get_db)):
+    # db1 and db2 are the SAME connection
+    # get_db() is called only once
+    ...
+```
+
+### Request State
+
+Use `request.state` to pass data between middleware and handlers:
+
+```python
+# Middleware
+@app.middleware
+async def auth_middleware(request, call_next):
+    token = request.headers.get("X-API-Key")
+    request.state.api_key = token  # Store for later
+    return await call_next(request)
+
+
+# Handler
+@app.get("/me")
+async def get_me(request):
+    api_key = request.state.api_key  # Access from middleware
+    ...
+```
+
+### Examples
+
+#### Database Connection
+
+```python
+import sqlite3
+from altapi.depends import Depends
+
+
+def get_db():
+    conn = sqlite3.connect("app.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@app.get("/users/{id:int}")
+async def get_user(id: int, db=Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (id,))
+    user = cursor.fetchone()
+    if not user:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(dict(user))
+```
+
+#### Authentication
+
+```python
+from altapi.http import Request, JSONResponse
+
+
+async def get_current_user(request: Request, db=Depends(get_db)):
+    token = request.headers.get("Authorization", "")
+    if not token.startswith("Bearer "):
+        return None
+    
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE token = ?", (token[7:],))
+    return cursor.fetchone()
+
+
+@app.get("/protected")
+async def protected_route(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, 401)
+    return JSONResponse({"user": dict(user)})
+```
+
+#### Configuration/Settings
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass
+class Settings:
+    debug: bool
+    database_url: str
+    secret_key: str
+    
+    @classmethod
+    def load_from_env(cls):
+        return cls(
+            debug=os.getenv("DEBUG", "false") == "true",
+            database_url=os.getenv("DATABASE_URL"),
+            secret_key=os.getenv("SECRET_KEY"),
+        )
+
+
+def get_settings():
+    return Settings.load_from_env()
+
+
+@app.get("/config")
+async def get_config(settings=Depends(get_settings)):
+    return JSONResponse({
+        "debug": settings.debug,
+        "version": "1.0.0"
+    })
 ```
 
 ---
@@ -1445,7 +1712,70 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
 ```
 
-More examples available in `examples/` folder.
+### Example: CRUD Application with SQLite
+
+Full-featured web application with Dependency Injection:
+
+```python
+from altapi import AltAPI
+from altapi.http import JSONResponse, RedirectResponse
+from altapi.depends import Depends
+import sqlite3
+
+app = AltAPI(templates_directory="templates")
+
+# Database dependency
+def get_db():
+    conn = sqlite3.connect("users.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+# List users (web page)
+@app.get("/")
+async def home(request, db=Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users")
+    users = [dict(row) for row in cursor.fetchall()]
+    return templates.TemplateResponse("users.html", {"request": request, "users": users})
+
+# API: List users
+@app.get("/api/users")
+async def api_list_users(db=Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users")
+    return JSONResponse({"users": [dict(row) for row in cursor.fetchall()]})
+
+# API: Create user
+@app.post("/api/users")
+async def api_create_user(request, db=Depends(get_db)):
+    data = await request.json()
+    cursor = db.cursor()
+    cursor.execute(
+        "INSERT INTO users (name, email) VALUES (?, ?)",
+        (data["name"], data["email"])
+    )
+    db.commit()
+    return JSONResponse({"id": cursor.lastrowid}, status_code=201)
+
+# API: Delete user
+@app.delete("/api/users/{id:int}")
+async def api_delete_user(id: int, db=Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (id,))
+    db.commit()
+    return JSONResponse({"status": "ok"})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
+```
+
+More examples available in `examples/` folder:
+- `examples/webapp.py` — Full CRUD app with web UI and API
+- `examples/sqlite_example.py` — SQLite + Dependency Injection
+- `examples/app.py` — Feature demonstration
 
 ---
 
