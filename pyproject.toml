@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "AltAPI"
-version = "1.4.1"
+version = "2.0.0"
 
 authors = [
     {name = "amogus-gggy"}
@@ -28,6 +28,9 @@ dev = [
     "httpx>=0.27.0",
 
 ]
+
+[project.scripts]
+altapi = "altapi.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/amogus-gggy/AltAPI"
