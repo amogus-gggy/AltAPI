@@ -70,9 +70,9 @@ def _parse_app_run_config(module_str: str) -> dict:
         func = expr.func
         is_app_run = False
 
-        # Check for app.run() or app.<something>.run()
+        # Check for app.run()
         if isinstance(func, ast.Attribute) and func.attr == "run":
-            if isinstance(func.value, ast.Name):
+            if isinstance(func.value, ast.Name) and func.value.id == "app":
                 is_app_run = True
 
         if not is_app_run:
@@ -96,24 +96,38 @@ def _run_server(args: argparse.Namespace) -> None:
     """Run the development server using uvicorn."""
     import uvicorn
 
-    app = _import_app(args.app)
-
     # Parse module source for app.run() configuration
     module_str = args.app.split(":")[0]
     app_run_config = _parse_app_run_config(module_str)
 
-    # Use CLI args if provided, otherwise fallback to app.run() config
-    host = args.host if args.host != "127.0.0.1" else app_run_config.get("host", "127.0.0.1")
-    port = args.port if args.port != 8000 else app_run_config.get("port", 8000)
-    workers = args.workers if args.workers != 1 else app_run_config.get("workers", 1)
+    # Use CLI args if explicitly provided, otherwise fallback to app.run() config
+    cli_host_provided = args.host is not None
+    cli_port_provided = args.port is not None
+    cli_workers_provided = args.workers is not None
+
+    host = args.host if cli_host_provided else app_run_config.get("host", "127.0.0.1")
+    port = args.port if cli_port_provided else app_run_config.get("port", 8000)
+    workers = args.workers if cli_workers_provided else app_run_config.get("workers", 1)
     reload = args.reload
 
     # Reload forces single worker
     if reload:
         workers = 1
 
+    # Convert module:app to proper import string for uvicorn
+    app_import_str = args.app.replace("/", ".").replace("\\", ".")
+    # Remove trailing .py if present
+    if app_import_str.endswith(".py"):
+        app_import_str = app_import_str[:-3]
+
+
+    # Needed because of weird uvicorn routing
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
     uvicorn.run(
-        app,
+        app_import_str,
         host=host,
         port=port,
         reload=reload,
@@ -148,14 +162,14 @@ def main() -> None:
     )
     run_parser.add_argument(
         "--host",
-        default="127.0.0.1",
-        help="Host to bind (default: 127.0.0.1 or from app.run())"
+        default=None,
+        help="Host to bind (default: from app.run() or 127.0.0.1)"
     )
     run_parser.add_argument(
         "--port",
         type=int,
-        default=8000,
-        help="Port to bind (default: 8000 or from app.run())"
+        default=None,
+        help="Port to bind (default: from app.run() or 8000)"
     )
     run_parser.add_argument(
         "--reload",
@@ -165,8 +179,8 @@ def main() -> None:
     run_parser.add_argument(
         "--workers",
         type=int,
-        default=1,
-        help="Number of worker processes (default: 1 or from app.run())"
+        default=None,
+        help="Number of worker processes (default: from app.run() or 1)"
     )
     run_parser.add_argument(
         "--log-level",
