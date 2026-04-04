@@ -15,6 +15,8 @@ from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
 from .depends import Depends, DependencyInjector, get_dependencies_from_signature, cleanup_dependencies
+from .openapi_spec import OpenAPIGenerator
+from .swagger import SwaggerUI
 # Rate limiting now uses shared memory - no network overhead
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
@@ -58,6 +60,13 @@ class AltAPI:
         templates_directory: Union[str, os.PathLike] = "templates",
         static_directory: Optional[Union[str, os.PathLike]] = None,
         cache_timeout: int = 300,
+        # OpenAPI/Swagger settings
+        enable_openapi: bool = True,
+        openapi_url: Optional[str] = "/openapi.json",
+        docs_url: Optional[str] = "/docs",
+        title: str = "AltAPI",
+        version: str = "0.1.0",
+        description: str = "",
     ):
         """
         Initialize AltAPI application.
@@ -67,6 +76,12 @@ class AltAPI:
             templates_directory: Directory with Jinja2 templates
             static_directory: Directory with static files (optional)
             cache_timeout: Default cache lifetime in seconds
+            enable_openapi: Enable OpenAPI/SwaggerUI (set False for production)
+            openapi_url: URL for OpenAPI JSON specification (None to disable)
+            docs_url: URL for SwaggerUI documentation (None to disable)
+            title: API title for OpenAPI spec
+            version: API version for OpenAPI spec
+            description: API description for OpenAPI spec
         """
         self._router = Router()
         self._middlewares = middleware or []
@@ -105,11 +120,34 @@ class AltAPI:
         # Add CacheMiddleware to list (will be initialized in lifespan with InMemoryCache)
         self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
 
+        # Initialize OpenAPI generator
+        self._openapi_generator = OpenAPIGenerator(
+            title=title,
+            version=version,
+            description=description,
+        )
+        
+        # Handle OpenAPI settings
+        if not enable_openapi:
+            self._openapi_url = None
+            self._docs_url = None
+        else:
+            self._openapi_url = openapi_url
+            self._docs_url = docs_url
+        
+        # Store route metadata for OpenAPI generation
+        self._registered_routes: List[Dict[str, Any]] = []
+        self._openapi_routes_registered = False
+
     async def _init_shared_resources(self):
         """Initialize shared resources (called in lifespan)."""
         # Initialize per-worker in-memory cache backend (fast, no IPC)
         self._cache_backend = InMemoryCache()
         CacheManager.set_default_backend(self._cache_backend)
+        
+        # Register OpenAPI routes for this worker
+        if self._openapi_url or self._docs_url:
+            self._register_openapi_routes()
 
         # Rebuild app with middlewares and register cache routes
         if not self._app_built:
@@ -147,6 +185,12 @@ class AltAPI:
         def decorator(func):
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
+                # Register route for OpenAPI
+                self._registered_routes.append({
+                    "path": path,
+                    "method": m.upper(),
+                    "handler": func,
+                })
 
             # Register for caching if @cache decorator was applied
             # Check the function itself first, then unwrap to find _cache_expires
@@ -265,6 +309,21 @@ class AltAPI:
             return func
 
         return decorator
+    
+    def enable_openapi(
+        self,
+        openapi_url: Optional[str] = "/openapi.json",
+        docs_url: Optional[str] = "/docs",
+    ):
+        """
+        Enable OpenAPI specification and SwaggerUI documentation.
+        
+        Args:
+            openapi_url: URL for OpenAPI JSON specification (None to disable)
+            docs_url: URL for SwaggerUI documentation (None to disable)
+        """
+        self._openapi_url = openapi_url
+        self._docs_url = docs_url
 
     def cache(self, path: str, expires: int = 300):
         """
@@ -390,7 +449,7 @@ class AltAPI:
     def _build_middlewares(self, app: ASGIApp) -> ASGIApp:
         # Register cache routes before building middlewares
         cache_middleware_instance = None
-        
+
         for mw in reversed(self._middlewares):
             built = mw.build(app)
             # Save cache middleware instance for later registration
@@ -404,6 +463,79 @@ class AltAPI:
                 cache_middleware_instance.register_handler(path, expires)
 
         return app
+    
+    def _register_openapi_routes(self):
+        """
+        Register OpenAPI specification and SwaggerUI routes directly to router.
+        """
+        # Prevent double registration
+        if self._openapi_routes_registered:
+            return
+        self._openapi_routes_registered = True
+        
+        from altapi.http.responses import JSONResponse, HTMLResponse
+        from altapi.swagger import get_swagger_ui_html
+        
+        # Build OpenAPI specification from registered routes
+        for route_info in self._registered_routes:
+            handler = route_info["handler"]
+            path = route_info["path"]
+            method = route_info["method"]
+            
+            # Extract OpenAPI metadata from handler
+            summary = None
+            description = None
+            tags = None
+            request_body = None
+            responses = None
+            deprecated = False
+            
+            if hasattr(handler, "_openapi_metadata"):
+                meta = handler._openapi_metadata
+                summary = meta.get("summary")
+                description = meta.get("description")
+                tags = meta.get("tags")
+                request_body = meta.get("request_body")
+                responses = meta.get("responses")
+                deprecated = meta.get("deprecated", False)
+            
+            # Add route to OpenAPI generator
+            self._openapi_generator.add_route(
+                path=path,
+                method=method,
+                handler=handler,
+                summary=summary,
+                description=description,
+                tags=tags,
+                request_body=request_body,
+                responses=responses,
+                deprecated=deprecated,
+            )
+        
+        # Register OpenAPI JSON endpoint directly to router (not via decorator to avoid _registered_routes pollution)
+        if self._openapi_url:
+            generator = self._openapi_generator
+            openapi_url = self._openapi_url
+            
+            async def openapi_json_handler(request):
+                spec = generator.generate()
+                return JSONResponse(spec)
+            
+            self._router.add_route(openapi_url, "GET", openapi_json_handler)
+        
+        # Register SwaggerUI endpoint directly to router
+        if self._docs_url:
+            openapi_url = self._openapi_url
+            generator = self._openapi_generator
+            
+            async def swagger_ui_handler(request):
+                html = get_swagger_ui_html(
+                    openapi_url=openapi_url,
+                    title=f"{generator.title} - Swagger UI",
+                )
+                return HTMLResponse(html)
+            
+            self._router.add_route(self._docs_url, "GET", swagger_ui_handler)
 
     async def _handle_http(self, scope, receive, send):
         path = scope.get("path", "/")

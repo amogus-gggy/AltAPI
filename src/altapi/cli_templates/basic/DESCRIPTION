@@ -1,1 +1,8 @@
-Minimal AltAPI project with basic setup.
+A simple AltAPI application with OpenAPI/SwaggerUI documentation.
+
+Features:
+- OpenAPI 3.0 auto-generated specification
+- SwaggerUI interactive documentation
+- JSON, HTML responses
+- Typed path parameters
+- Sync and async handler support

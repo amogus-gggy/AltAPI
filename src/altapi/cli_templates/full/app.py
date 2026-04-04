@@ -8,11 +8,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(BASE_DIR, "templates")
 static_dir = os.path.join(BASE_DIR, "static")
 
-# Create app
+# Create app with OpenAPI/SwaggerUI enabled
 app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
-    cache_timeout=300
+    cache_timeout=300,
+    # OpenAPI settings
+    title="MyProject API",
+    version="0.1.0",
+    description="Full-featured API built with AltAPI",
+    # For production, disable OpenAPI:
+    # enable_openapi=False,
+    # Custom URLs:
+    # openapi_url="/api/openapi.json",
+    # docs_url="/api/docs",
 )
 
 

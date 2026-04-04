@@ -4,8 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Greetings!</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        h1 { color: #667eea; }
+        a { color: #667eea; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
 </head>
 <body>
-    <h1>Hi, {{ name }}!</h1>
+    <h1>👋 Hi, {{ name }}!</h1>
+    <p>Welcome to AltAPI!</p>
+    <hr>
+    <p>
+        <a href="/">🏠 Home</a> | 
+        <a href="/docs">📖 API Docs</a> | 
+        <a href="/openapi.json">📄 OpenAPI JSON</a>
+    </p>
 </body>
 </html>

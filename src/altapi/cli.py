@@ -32,14 +32,20 @@ def _copy_template(template_name: str, target_dir: Path, project_name: str):
     # Create target directory
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copy all files from template
-    for item in template_dir.iterdir():
+    # Recursively copy all files and directories
+    for item in template_dir.rglob("*"):
+        relative_path = item.relative_to(template_dir)
+        target_path = target_dir / relative_path
+
         if item.is_file():
+            # Ensure parent directory exists
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            
             content = item.read_text(encoding="utf-8")
             # Replace placeholder project name
             content = content.replace("myproject", project_name.lower().replace(" ", "_").replace("-", "_"))
             content = content.replace("MyProject", project_name.title().replace(" ", ""))
-            (target_dir / item.name).write_text(content, encoding="utf-8")
+            target_path.write_text(content, encoding="utf-8")
 
     click.echo(f"✓ Created project '{project_name}' in {target_dir}")
 
@@ -156,6 +162,7 @@ def create(name: str, template: str, target_dir: Optional[str]):
     click.echo(f"  cd {project_name}")
     click.echo("  pip install -e .  # or: pip install altapi")
     click.echo("  python app.py     # or: altapi run")
+    click.echo("  Open http://localhost:8000/docs for SwaggerUI")
     click.echo("")
 
 
@@ -346,11 +353,17 @@ def init():
     app_content = '''"""AltAPI Application"""
 from altapi import AltAPI
 from altapi.http import JSONResponse
+from altapi.openapi_decorators import openapi
 
-app = AltAPI()
+app = AltAPI(
+    title="MyAPI",
+    version="0.1.0",
+    description="My API built with AltAPI",
+)
 
 
 @app.get("/")
+@openapi(summary="Home", description="Welcome endpoint", tags=["general"])
 async def home(request):
     return JSONResponse({"message": "Hello, World!"})
 
@@ -373,6 +386,7 @@ if __name__ == "__main__":
     click.echo("Next steps:")
     click.echo("  pip install -r requirements.txt")
     click.echo("  python app.py  # or: altapi run")
+    click.echo("  Open http://localhost:8000/docs for SwaggerUI")
     click.echo("")
 
 
@@ -418,11 +432,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(BASE_DIR, "templates")
 static_dir = os.path.join(BASE_DIR, "static")
 
-# Create app
+# Create app with OpenAPI/SwaggerUI enabled
 app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
-    cache_timeout=300
+    cache_timeout=300,
+    # OpenAPI settings
+    title="{project_name} API",
+    version="0.1.0",
+    description="Full-featured API built with AltAPI",
+    # For production, disable OpenAPI:
+    # enable_openapi=False,
+    # Custom URLs:
+    # openapi_url="/api/openapi.json",
+    # docs_url="/api/docs",
 )
 
 
@@ -451,16 +474,19 @@ if __name__ == "__main__":
     # Create routes/api.py
     api_content = '''"""API Routes"""
 from altapi.http import JSONResponse
+from altapi.openapi_decorators import openapi
 
 
 def register_routes(app):
     """Register API routes."""
 
     @app.get("/api/health")
+    @openapi(summary="Health Check", description="API health status", tags=["system"])
     async def health_check(request):
         return JSONResponse({"status": "ok"})
 
     @app.get("/api/version")
+    @openapi(summary="Version", description="API version info", tags=["system"])
     async def version(request):
         return JSONResponse({"version": "1.0.0"})
 '''
@@ -470,12 +496,14 @@ def register_routes(app):
     # Create routes/pages.py
     pages_content = '''"""Page Routes"""
 from altapi.http import HTMLResponse
+from altapi.openapi_decorators import openapi
 
 
 def register_routes(app):
     """Register page routes."""
 
     @app.get("/about")
+    @openapi(summary="About Page", description="About information page", tags=["pages"])
     async def about_page(request):
         return HTMLResponse("<h1>About Page</h1>")
 '''
@@ -497,13 +525,14 @@ def register_routes(app):
         <nav>
             <a href="/">Home</a>
             <a href="/about">About</a>
+            <a href="/docs">Docs</a>
         </nav>
     </header>
     <main>
         {% block content %}{% endblock %}
     </main>
     <footer>
-        <p>&copy; 2026 MyProject</p>
+        <p>&copy; 2026 MyProject | <a href="/docs">API Docs</a> | <a href="/openapi.json">OpenAPI JSON</a></p>
     </footer>
     <script src="/static/js/main.js"></script>
 </body>
@@ -548,6 +577,10 @@ def register_routes(app):
             <p>Full WebSocket support out of the box.</p>
         </div>
         <div class="feature-card">
+            <h3>📖 OpenAPI</h3>
+            <p>Auto-generated OpenAPI spec with SwaggerUI docs.</p>
+        </div>
+        <div class="feature-card">
             <h3>🔧 Middleware</h3>
             <p>ASGI-compatible middleware system.</p>
         </div>
@@ -560,6 +593,8 @@ def register_routes(app):
     </div>
 
     <div class="api-links">
+        <a href="/docs" class="api-link">📖 SwaggerUI Docs</a>
+        <a href="/openapi.json" class="api-link">📄 OpenAPI JSON</a>
         <a href="/api/health" class="api-link">GET /api/health</a>
         <a href="/api/version" class="api-link">GET /api/version</a>
         <a href="/about" class="api-link">GET /about</a>
@@ -751,6 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
     click.echo(f"  cd {project_name}")
     click.echo("  pip install -r requirements.txt")
     click.echo("  python app.py")
+    click.echo("  Open http://localhost:8000/docs for SwaggerUI")
     click.echo("")
 
 

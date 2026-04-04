@@ -20,6 +20,7 @@
   - [WebSocket](#websocket)
 - [Routing](#routing)
 - [WebSocket Support](#websocket-support)
+- [OpenAPI & SwaggerUI](#openapi--swaggerui)
 - [Middleware](#middleware)
 - [Dependency Injection](#dependency-injection)
 - [Caching](#caching)
@@ -51,6 +52,8 @@
 - ✅ **Dependency Injection** with automatic cleanup
 - ✅ **Request state** for passing data between middleware and handlers
 - ✅ **Form data parsing** (urlencoded and multipart)
+- ✅ **OpenAPI 3.0 specification** auto-generation
+- ✅ **SwaggerUI** interactive API documentation
 
 ---
 
@@ -134,8 +137,12 @@ app = AltAPI(templates_directory="templates")
 | `templates_directory` | `str` | Directory for Jinja2 templates | `"templates"` |
 | `static_directory` | `str` | Directory for static files (mounted at `/static`) | `None` |
 | `cache_timeout` | `int` | Default cache timeout in seconds | `300` |
-| `shared_host` | `str` | Host for shared manager | `"127.0.0.1"` |
-| `shared_port` | `int` | Port for shared manager | `58000` |
+| `enable_openapi` | `bool` | Enable OpenAPI/SwaggerUI (set `False` for production) | `True` |
+| `openapi_url` | `str` | URL for OpenAPI JSON specification (`None` to disable) | `"/openapi.json"` |
+| `docs_url` | `str` | URL for SwaggerUI documentation (`None` to disable) | `"/docs"` |
+| `title` | `str` | API title for OpenAPI spec | `"AltAPI"` |
+| `version` | `str` | API version for OpenAPI spec | `"0.1.0"` |
+| `description` | `str` | API description for OpenAPI spec | `""` |
 
 #### HTTP Method Decorators
 
@@ -985,6 +992,212 @@ from altapi.caching import CacheMiddleware
 app = AltAPI(middleware=[
     Middleware(CacheMiddleware, cache_timeout=300)
 ])
+```
+
+---
+
+## OpenAPI & SwaggerUI
+
+AltAPI provides built-in support for **OpenAPI 3.0 specification** generation and **SwaggerUI** interactive documentation.
+
+### Quick Start
+
+OpenAPI and SwaggerUI are enabled **by default**:
+
+```python
+from altapi import AltAPI
+from altapi.http import JSONResponse
+
+app = AltAPI(
+    title="My API",
+    version="1.0.0",
+    description="My awesome API",
+)
+
+
+@app.get("/api/hello")
+async def hello(request):
+    return JSONResponse({"message": "Hello, World!"})
+
+
+if __name__ == "__main__":
+    app.run()
+```
+
+After running the server:
+- **SwaggerUI**: http://localhost:8000/docs
+- **OpenAPI JSON**: http://localhost:8000/openapi.json
+
+### Disabling Documentation
+
+To disable OpenAPI/SwaggerUI (recommended for production):
+
+```python
+# Option 1: Disable completely
+app = AltAPI(enable_openapi=False)
+
+# Option 2: Disable only SwaggerUI (keep OpenAPI JSON)
+app = AltAPI(docs_url=None)
+
+# Option 3: Disable only OpenAPI JSON (keep SwaggerUI)
+app = AltAPI(openapi_url=None)
+```
+
+### Custom URLs
+
+To customize the documentation URLs:
+
+```python
+app = AltAPI(
+    openapi_url="/api/openapi.json",  # Custom OpenAPI URL
+    docs_url="/api/docs",              # Custom docs URL
+)
+```
+
+### Adding Metadata to Endpoints
+
+Use the `@openapi` decorator to add detailed documentation:
+
+```python
+from altapi.openapi_decorators import openapi
+
+
+@app.get("/api/users/{id:int}")
+@openapi(
+    summary="Get user by ID",
+    description="Returns a single user object by their ID",
+    tags=["users"],
+    responses={
+        "200": {
+            "description": "User found",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                            "email": {"type": "string", "format": "email"},
+                        }
+                    }
+                }
+            }
+        },
+        "404": {"description": "User not found"}
+    }
+)
+async def get_user(request):
+    user_id = request.path_params["id"]
+    return JSONResponse({"id": user_id, "name": f"User {user_id}"})
+```
+
+### Request Body Documentation
+
+For POST/PUT/PATCH endpoints, use `@describe_request_body`:
+
+```python
+from altapi.openapi_decorators import openapi, describe_request_body
+
+
+@app.post("/api/users")
+@describe_request_body({
+    "content": {
+        "application/json": {
+            "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "email": {"type": "string", "format": "email"},
+                }
+            }
+        }
+    }
+})
+@openapi(
+    summary="Create user",
+    description="Creates a new user",
+    tags=["users"],
+)
+async def create_user(request):
+    data = await request.json()
+    return JSONResponse({"id": 1, **data})
+```
+
+### Tags and Deprecation
+
+```python
+from altapi.openapi_decorators import tag, deprecated
+
+
+@app.get("/api/items")
+@tag("items", "catalog")
+async def list_items(request):
+    return JSONResponse({"items": []})
+
+
+@app.get("/api/old-endpoint")
+@deprecated
+async def old_endpoint(request):
+    return JSONResponse({"message": "Use /api/new-endpoint instead"})
+```
+
+### Available OpenAPI Decorators
+
+| Decorator | Description |
+|-----------|-------------|
+| `@openapi(...)` | Add full OpenAPI metadata to endpoint |
+| `@tag(...)` | Add tags to endpoint |
+| `@deprecated` | Mark endpoint as deprecated |
+| `@describe_responses(...)` | Add response schemas |
+| `@describe_request_body(...)` | Add request body schema |
+
+### Auto-generated Documentation
+
+AltAPI automatically generates OpenAPI 3.0 specification from:
+- Registered routes
+- Path parameter types (`{id:int}`, `{name:str}`, `{value:float}`)
+- Handler function signatures (query parameters)
+- Handler docstrings
+- `@openapi` decorator metadata
+
+### Example Output
+
+OpenAPI JSON structure:
+
+```json
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "My API",
+    "version": "1.0.0",
+    "description": "My awesome API"
+  },
+  "servers": [
+    {"url": "http://localhost:8000", "description": "Local development"}
+  ],
+  "paths": {
+    "/api/users/{id}": {
+      "get": {
+        "summary": "Get user by ID",
+        "operationId": "get__api_users__id_",
+        "tags": ["users"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "integer", "format": "int64"}
+          }
+        ],
+        "responses": {
+          "200": {"description": "Successful Response"},
+          "404": {"description": "Not Found"}
+        }
+      }
+    }
+  }
+}
 ```
 
 ---

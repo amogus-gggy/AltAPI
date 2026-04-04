@@ -15,6 +15,7 @@ from altapi.websocket import WebSocket
 from altapi.templating import Jinja2Templates
 from altapi.caching import InMemoryCache, cache
 from altapi.ratelimit import rate_limit
+from altapi.openapi_decorators import openapi, tag, deprecated, describe_request_body
 import random
 import os
 
@@ -26,10 +27,20 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_dir, exist_ok=True)
 
 # Create app with templates, static directories and caching
+# OpenAPI and SwaggerUI are enabled by default
 app = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
-    cache_timeout=300
+    cache_timeout=300,
+    # OpenAPI/Swagger settings (defaults: /openapi.json and /docs)
+    title="AltAPI Example",
+    version="1.0.0",
+    description="A comprehensive example demonstrating AltAPI features including OpenAPI/SwaggerUI",
+    # For production, disable OpenAPI:
+    # enable_openapi=False,
+    # Custom URLs:
+    # openapi_url="/api/openapi.json",
+    # docs_url="/api/docs",
 )
 
 # Setup templates object for TemplateResponse
@@ -42,12 +53,38 @@ async def home(request):
 
 
 @app.get("/api/hello")
+@openapi(
+    summary="Hello World",
+    description="Returns a greeting message",
+    tags=["greetings"],
+)
 async def hello(request):
     return JSONResponse({"message": "Hello, World!"})
 
 
 @app.get("/api/cached")
 @cache(expires=60)  # Cache for 60 seconds
+@openapi(
+    summary="Cached endpoint",
+    description="Returns a cached response with timestamp",
+    tags=["caching"],
+    responses={
+        "200": {
+            "description": "Cached response with timestamp",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {"type": "string"},
+                            "timestamp": {"type": "number"},
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def cached_endpoint(request):
     import time
     return JSONResponse({
@@ -57,6 +94,21 @@ async def cached_endpoint(request):
 
 
 @app.post("/api/echo")
+@describe_request_body({
+    "content": {
+        "application/json": {
+            "schema": {
+                "type": "object",
+                "description": "Any JSON data to be echoed back"
+            }
+        }
+    }
+})
+@openapi(
+    summary="Echo endpoint",
+    description="Returns the received JSON data",
+    tags=["echo"],
+)
 async def echo(request):
     data = await request.json()
     return JSONResponse({"echo": data})
@@ -64,18 +116,46 @@ async def echo(request):
 
 # Typed path parameters
 @app.get("/api/users/{id:int}")
+@openapi(
+    summary="Get user by ID",
+    description="Returns user information by user ID",
+    tags=["users"],
+    responses={
+        "200": {
+            "description": "User found",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        }
+                    }
+                }
+            }
+        },
+        "404": {"description": "User not found"}
+    }
+)
 async def get_user(request):
     user_id = request.path_params["id"]  # int
     return JSONResponse({"id": user_id, "name": f"User {user_id}"})
 
 
 @app.get("/api/items/{name:str}")
+@tag("items", "catalog")
 async def get_item(request):
     name = request.path_params["name"]  # str
     return JSONResponse({"name": name, "type": "item"})
 
 
 @app.get("/api/score/{value:float}")
+@openapi(
+    summary="Get score",
+    description="Returns score value doubled",
+    tags=["scores"],
+)
 async def get_score(request):
     value = request.path_params["value"]  # float
     return JSONResponse({"score": value, "doubled": value * 2})
@@ -305,8 +385,9 @@ async def ping(request):
 
 
 @app.get("/api/status")
+@deprecated
 async def status(request):
-    """Status endpoint."""
+    """Status endpoint (deprecated)."""
     return JSONResponse({"healthy": True, "version": "0.1.0"})
 
 
