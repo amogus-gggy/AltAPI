@@ -20,6 +20,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "ujson",
     "cython>=3.0.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
