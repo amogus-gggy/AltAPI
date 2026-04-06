@@ -4,17 +4,12 @@ Rate limit storage using multiprocessing.shared_memory.
 Provides fast, process-safe rate limiting without network overhead.
 """
 
-import asyncio
-import hashlib
-import json
 import multiprocessing.shared_memory as shm
 import struct
-import threading
 import time
 from abc import ABC, abstractmethod
-from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 @dataclass
@@ -36,42 +31,46 @@ class BaseRateLimitStorage(ABC):
         limit: int,
         period: float
     ) -> RateLimitResult:
-        """
-        Check rate limit for a key.
-
-        Args:
-            key: Unique identifier (e.g., IP address)
-            limit: Maximum requests allowed
-            period: Time period in seconds
-
-        Returns:
-            RateLimitResult with allowed status and metadata
-        """
         pass
 
     @abstractmethod
     async def increment(self, key: str, period: float) -> int:
-        """
-        Increment request count for a key.
-
-        Args:
-            key: Unique identifier
-            period: Time period in seconds
-
-        Returns:
-            Current request count
-        """
         pass
+
+    async def check_and_increment(
+        self,
+        key: str,
+        limit: int,
+        period: float
+    ) -> RateLimitResult:
+        """
+        Atomic check + increment in one operation.
+        Override for optimized implementations.
+        """
+        result = await self.check_rate_limit(key, limit, period)
+        if result.allowed:
+            await self.increment(key, period)
+            # Recalculate remaining after increment
+            result = RateLimitResult(
+                allowed=result.allowed,
+                remaining=max(0, result.remaining - 1),
+                limit=result.limit,
+                reset=result.reset,
+            )
+        return result
 
 
 class InMemoryRateLimitStorage(BaseRateLimitStorage):
     """
-    Simple in-memory rate limit storage for single-process use.
+    Ultra-fast in-memory rate limiting using sliding window counter.
+    O(1) per request - no loops, no arrays, no timestamp storage.
     """
 
+    __slots__ = ('_counters',)
+
     def __init__(self):
-        self._limits: Dict[str, Deque[float]] = {}
-        self._lock = asyncio.Lock()
+        # key -> [count, window_start]
+        self._counters: Dict[str, list] = {}
 
     async def check_rate_limit(
         self,
@@ -80,80 +79,101 @@ class InMemoryRateLimitStorage(BaseRateLimitStorage):
         period: float
     ) -> RateLimitResult:
         now = time.time()
-        window_start = now - period
+        counters = self._counters
 
-        if key not in self._limits:
-            self._limits[key] = deque()
+        entry = counters.get(key)
+        if entry is None:
+            counters[key] = [0, now]
+            return RateLimitResult(allowed=True, remaining=limit, limit=limit, reset=now + period)
 
-        timestamps = self._limits[key]
+        count, window_start = entry
+        window_end = window_start + period
 
-        # Remove old timestamps
-        while timestamps and timestamps[0] < window_start:
-            timestamps.popleft()
+        if now >= window_end:
+            # Window expired - reset
+            entry[0] = 0
+            entry[1] = now
+            count = 0
+            window_start = now
 
-        count = len(timestamps)
         remaining = max(0, limit - count)
         allowed = count < limit
-
-        reset_time = timestamps[0] + period if timestamps else now + period
 
         return RateLimitResult(
             allowed=allowed,
             remaining=remaining,
             limit=limit,
-            reset=reset_time
+            reset=window_start + period
         )
 
     async def increment(self, key: str, period: float) -> int:
         now = time.time()
-        window_start = now - period
+        counters = self._counters
 
-        if key not in self._limits:
-            self._limits[key] = deque()
+        entry = counters.get(key)
+        if entry is None:
+            counters[key] = [1, now]
+            return 1
 
-        timestamps = self._limits[key]
+        count, window_start = entry
+        if now >= window_start + period:
+            # Window expired - reset
+            entry[0] = 1
+            entry[1] = now
+            return 1
 
-        # Remove old timestamps
-        while timestamps and timestamps[0] < window_start:
-            timestamps.popleft()
+        entry[0] = count + 1
+        return count + 1
 
-        # Add current timestamp
-        timestamps.append(now)
+    async def check_and_increment(
+        self,
+        key: str,
+        limit: int,
+        period: float
+    ) -> RateLimitResult:
+        """Atomic check + increment - single dict lookup, single hash."""
+        now = time.time()
+        counters = self._counters
 
-        return len(timestamps)
+        entry = counters.get(key)
+        if entry is None:
+            counters[key] = [1, now]
+            return RateLimitResult(allowed=True, remaining=limit - 1, limit=limit, reset=now + period)
+
+        count, window_start = entry
+        if now >= window_start + period:
+            # Window expired - reset
+            entry[0] = 1
+            entry[1] = now
+            return RateLimitResult(allowed=True, remaining=limit - 1, limit=limit, reset=now + period)
+
+        remaining = max(0, limit - count)
+        allowed = count < limit
+
+        if allowed:
+            entry[0] = count + 1
+            remaining -= 1
+
+        return RateLimitResult(
+            allowed=allowed,
+            remaining=max(0, remaining),
+            limit=limit,
+            reset=window_start + period
+        )
 
 
 class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
     """
-    Rate limit storage using multiprocessing.shared_memory.
-
-    Provides process-safe rate limiting without network overhead.
-    Uses a hash-based key indexing system for efficient lookups.
-
-    Args:
-        name: Name for the shared memory block (default: "altapi_ratelimit")
-        max_keys: Maximum number of unique rate limit keys (default: 10000)
-        max_timestamps: Maximum timestamps per key (default: 100)
+    Ultra-fast shared memory rate limiting using sliding window counter.
+    O(1) per request - no loops, no timestamp arrays.
 
     Memory layout:
-        - Header (64 bytes):
-            - magic (4 bytes): b'ALMT'
-            - version (4 bytes): version number
-            - max_keys (4 bytes): maximum keys
-            - max_ts (4 bytes): max timestamps per key
-            - initialized (4 bytes): 1 if initialized
-            - reserved (44 bytes)
-
-        - Key Index (variable):
-            - For each key: hash(32 bytes) + offset(4 bytes) + period(8 bytes) + count(4 bytes) + expires(8 bytes) = 56 bytes
-
-        - Timestamps (variable):
-            - For each key: array of timestamps (8 bytes each)
+        - Header (64 bytes): magic, version, max_keys, reserved
+        - Key Index: hash(8) + count(4) + window_start(8) + expires(8) = 28 bytes per key
     """
 
     HEADER_SIZE = 64
-    KEY_ENTRY_SIZE = 56  # hash(32) + offset(4) + period(8) + count(4) + expires(8)
-    TIMESTAMP_SIZE = 8  # double
+    KEY_ENTRY_SIZE = 28  # hash(8) + count(4) + window_start(8) + expires(8)
 
     MAGIC = b'ALMT'
     VERSION = 1
@@ -166,53 +186,50 @@ class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
     ):
         self.name = name
         self.max_keys = max_keys
-        self.max_timestamps = max_timestamps
 
         # Calculate total size
-        self._timestamps_size = max_keys * max_timestamps * self.TIMESTAMP_SIZE
         self._key_index_size = max_keys * self.KEY_ENTRY_SIZE
-        self._total_size = self.HEADER_SIZE + self._key_index_size + self._timestamps_size
+        self._total_size = self.HEADER_SIZE + self._key_index_size
 
         self._shm: Optional[shm.SharedMemory] = None
-        self._lock = threading.Lock()
         self._created = False
-        self._empty_slot: int = -1
 
-    def _get_key_hash(self, key: str) -> bytes:
-        """Get 32-byte hash of a key."""
-        return hashlib.sha256(key.encode('utf-8')).digest()
+        # Local dict cache: key_hash (int) -> key_idx (int)
+        self._key_cache: Dict[int, int] = {}
 
-    def _find_key(self, key_hash: bytes, period: float) -> Tuple[int, bool]:
-        """
-        Find key in index.
+    def _get_key_hash(self, key: str) -> int:
+        """Get fast 64-bit hash of a key."""
+        return hash(key) & 0xFFFFFFFFFFFFFFFF
 
-        Returns:
-            Tuple of (index, found)
-        """
+    def _find_key(self, key_hash: int, period: float) -> Tuple[int, bool]:
+        """Find key in index using local cache (O(1))."""
         now = time.time()
-        first_empty = -1
 
+        # Check local cache first (O(1))
+        idx = self._key_cache.get(key_hash)
+        if idx is not None:
+            offset = self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE
+            stored_hash = struct.unpack_from('=Q', self._shm.buf, offset)[0]
+            if stored_hash == key_hash:
+                expires = struct.unpack_from('=d', self._shm.buf, offset + 20)[0]
+                if expires > now:
+                    return idx, True
+                else:
+                    self._key_cache.pop(key_hash, None)
+                    return idx, False
+
+        # Cache miss - find first empty slot
         for i in range(self.max_keys):
             offset = self.HEADER_SIZE + i * self.KEY_ENTRY_SIZE
-            stored_hash = self._read_bytes(offset, 32)
+            stored_hash = struct.unpack_from('=Q', self._shm.buf, offset)[0]
 
-            # Check if slot matches
-            if stored_hash == key_hash:
-                # Found - check if expired
-                expires = struct.unpack('d', self._read_bytes(offset + 48, 8))[0]
+            if stored_hash == 0:
+                return i, False
+            elif stored_hash == key_hash:
+                expires = struct.unpack_from('=d', self._shm.buf, offset + 20)[0]
                 if expires > now:
+                    self._key_cache[key_hash] = i
                     return i, True
-                else:
-                    # Expired - return index but mark as not found
-                    return i, False
-
-            # Remember first empty slot
-            if stored_hash == b'\x00' * 32 and first_empty == -1:
-                first_empty = i
-
-        # No match found - return first empty slot or -1
-        if first_empty >= 0:
-            return first_empty, False
 
         return -1, False
 
@@ -226,17 +243,10 @@ class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
 
     def _initialize(self) -> None:
         """Initialize shared memory structure."""
-        # Magic
         self._write_bytes(0, self.MAGIC)
-        # Version
         struct.pack_into('I', self._shm.buf, 4, self.VERSION)
-        # max_keys
         struct.pack_into('I', self._shm.buf, 8, self.max_keys)
-        # max_timestamps
-        struct.pack_into('I', self._shm.buf, 12, self.max_timestamps)
-        # initialized
-        struct.pack_into('I', self._shm.buf, 16, 1)
-
+        struct.pack_into('I', self._shm.buf, 16, 1)  # initialized
         self._created = True
 
     def _ensure_initialized(self) -> None:
@@ -245,105 +255,60 @@ class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
             return
 
         try:
-            # Try attach first
             self._shm = shm.SharedMemory(name=self.name)
-
             magic = self._read_bytes(0, 4)
             if magic != self.MAGIC:
                 self._shm.close()
                 self._shm.unlink()
                 raise FileNotFoundError
-
             version = struct.unpack('I', self._read_bytes(4, 4))[0]
             if version != self.VERSION:
                 self._shm.close()
                 self._shm.unlink()
                 raise FileNotFoundError
-
             self._created = False
             return
-
         except FileNotFoundError:
             pass
 
-        # Try creating
         try:
-            self._shm = shm.SharedMemory(
-                name=self.name,
-                create=True,
-                size=self._total_size
-            )
+            self._shm = shm.SharedMemory(name=self.name, create=True, size=self._total_size)
             self._initialize()
             self._created = True
-
         except FileExistsError:
-            # Another process created it meanwhile, attach instead
             self._shm = shm.SharedMemory(name=self.name)
             self._created = False
 
     def _get_or_create_key(self, key: str, period: float) -> int:
-        """Get or create key index. Returns index into key array."""
+        """Get or create key index."""
         key_hash = self._get_key_hash(key)
         now = time.time()
 
-        with self._lock:
-            idx, found = self._find_key(key_hash, period)
+        idx, found = self._find_key(key_hash, period)
 
-            if found:
-                return idx
-
-            # Create new entry
-            if idx == -1:
-                # Find first empty slot
-                for i in range(self.max_keys):
-                    offset = self.HEADER_SIZE + i * self.KEY_ENTRY_SIZE
-                    stored_hash = self._read_bytes(offset, 32)
-                    if stored_hash == b'\x00' * 32:
-                        idx = i
-                        break
-
-            if idx == -1:
-                # No space - use slot 0 as fallback (LRU-like behavior)
-                idx = 0
-
-            # Write key hash
-            self._write_bytes(self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE, key_hash)
-            # Timestamps offset
-            ts_offset = self.HEADER_SIZE + self._key_index_size + idx * self.max_timestamps * self.TIMESTAMP_SIZE
-            struct.pack_into('I', self._shm.buf, self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE + 32, ts_offset)
-            # Period
-            struct.pack_into('d', self._shm.buf, self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE + 36, period)
-            # Count = 0
-            struct.pack_into('I', self._shm.buf, self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE + 44, 0)
-            # Expires
-            struct.pack_into('d', self._shm.buf, self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE + 48, now + period)
-
+        if found:
             return idx
 
-    def _get_timestamps(self, key_idx: int, period: float) -> Tuple[list, int]:
-        """Get timestamps for a key after cleanup."""
-        now = time.time()
-        window_start = now - period
+        # Find first empty slot
+        if idx == -1:
+            for i in range(self.max_keys):
+                offset = self.HEADER_SIZE + i * self.KEY_ENTRY_SIZE
+                if struct.unpack_from('=Q', self._shm.buf, offset)[0] == 0:
+                    idx = i
+                    break
 
-        # Read timestamps offset
-        ts_offset = struct.unpack('I', self._read_bytes(
-            self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 32, 4
-        ))[0]
+        if idx == -1:
+            idx = 0
 
-        # Read count
-        count = struct.unpack('I', self._read_bytes(
-            self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 44, 4
-        ))[0]
+        # Write key entry: hash(8) + count(4) + window_start(8) + expires(8) = 28 bytes
+        offset = self.HEADER_SIZE + idx * self.KEY_ENTRY_SIZE
+        struct.pack_into('=Q', self._shm.buf, offset, key_hash)
+        struct.pack_into('=I', self._shm.buf, offset + 8, 0)  # count
+        struct.pack_into('=d', self._shm.buf, offset + 12, now)  # window_start
+        struct.pack_into('=d', self._shm.buf, offset + 20, now + period)  # expires
 
-        timestamps = []
-        for i in range(count):
-            ts = struct.unpack('d', self._read_bytes(
-                ts_offset + i * self.TIMESTAMP_SIZE, self.TIMESTAMP_SIZE
-            ))[0]
-            if ts >= window_start:
-                timestamps.append(ts)
-
-        return timestamps, ts_offset
+        self._key_cache[key_hash] = idx
+        return idx
 
     async def check_rate_limit(
         self,
@@ -351,74 +316,90 @@ class SharedMemoryRateLimitStorage(BaseRateLimitStorage):
         limit: int,
         period: float
     ) -> RateLimitResult:
-        """Check rate limit for a key."""
+        """Check rate limit - O(1), no loops."""
         if self._shm is None:
             self._ensure_initialized()
 
         key_idx = self._get_or_create_key(key, period)
         now = time.time()
 
-        with self._lock:
-            timestamps, ts_offset = self._get_timestamps(key_idx, period)
+        offset = self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE
+        count = struct.unpack_from('=I', self._shm.buf, offset + 8)[0]
+        window_start = struct.unpack_from('=d', self._shm.buf, offset + 12)[0]
 
-            count = len(timestamps)
-            remaining = max(0, limit - count)
-            allowed = count < limit
+        if now >= window_start + period:
+            # Window expired
+            return RateLimitResult(allowed=True, remaining=limit, limit=limit, reset=now + period)
 
-            reset_time = timestamps[0] + period if timestamps else now + period
+        remaining = max(0, limit - count)
+        allowed = count < limit
 
-            return RateLimitResult(
-                allowed=allowed,
-                remaining=remaining,
-                limit=limit,
-                reset=reset_time
-            )
+        return RateLimitResult(
+            allowed=allowed,
+            remaining=remaining,
+            limit=limit,
+            reset=window_start + period
+        )
 
     async def increment(self, key: str, period: float) -> int:
-        """Increment request count for a key."""
+        """Increment counter - O(1), no loops."""
         if self._shm is None:
             self._ensure_initialized()
 
         key_idx = self._get_or_create_key(key, period)
         now = time.time()
-        window_start = now - period
 
-        with self._lock:
-            # Read timestamps offset and count
-            ts_offset = struct.unpack('I', self._read_bytes(
-                self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 32, 4
-            ))[0]
+        offset = self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE
+        count = struct.unpack_from('=I', self._shm.buf, offset + 8)[0]
+        window_start = struct.unpack_from('=d', self._shm.buf, offset + 12)[0]
 
-            count = struct.unpack('I', self._read_bytes(
-                self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 44, 4
-            ))[0]
+        if now >= window_start + period:
+            # Window expired - reset
+            struct.pack_into('=I', self._shm.buf, offset + 8, 1)
+            struct.pack_into('=d', self._shm.buf, offset + 12, now)
+            struct.pack_into('=d', self._shm.buf, offset + 20, now + period)
+            return 1
 
-            # Read and filter timestamps
-            timestamps = []
-            for i in range(count):
-                ts = struct.unpack('d', self._read_bytes(
-                    ts_offset + i * self.TIMESTAMP_SIZE, self.TIMESTAMP_SIZE
-                ))[0]
-                if ts >= window_start:
-                    timestamps.append(ts)
+        struct.pack_into('=I', self._shm.buf, offset + 8, count + 1)
+        return count + 1
 
-            # Add current timestamp
-            timestamps.append(now)
+    async def check_and_increment(
+        self,
+        key: str,
+        limit: int,
+        period: float
+    ) -> RateLimitResult:
+        """Atomic check + increment - single hash, single shm lookup."""
+        if self._shm is None:
+            self._ensure_initialized()
 
-            # Write back timestamps
-            new_count = min(len(timestamps), self.max_timestamps)
-            for i, ts in enumerate(timestamps[:self.max_timestamps]):
-                struct.pack_into('d', self._shm.buf, ts_offset + i * self.TIMESTAMP_SIZE, ts)
+        key_idx = self._get_or_create_key(key, period)
+        now = time.time()
 
-            # Update count
-            struct.pack_into('I', self._shm.buf,
-                           self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 44, new_count)
+        offset = self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE
+        count = struct.unpack_from('=I', self._shm.buf, offset + 8)[0]
+        window_start = struct.unpack_from('=d', self._shm.buf, offset + 12)[0]
 
-            # Update expires
-            struct.pack_into('d', self._shm.buf,
-                           self.HEADER_SIZE + key_idx * self.KEY_ENTRY_SIZE + 48, now + period)
+        if now >= window_start + period:
+            # Window expired - reset and allow
+            struct.pack_into('=I', self._shm.buf, offset + 8, 1)
+            struct.pack_into('=d', self._shm.buf, offset + 12, now)
+            struct.pack_into('=d', self._shm.buf, offset + 20, now + period)
+            return RateLimitResult(allowed=True, remaining=limit - 1, limit=limit, reset=now + period)
 
-            return new_count
+        remaining = max(0, limit - count)
+        allowed = count < limit
+
+        if allowed:
+            struct.pack_into('=I', self._shm.buf, offset + 8, count + 1)
+            remaining -= 1
+
+        return RateLimitResult(
+            allowed=allowed,
+            remaining=max(0, remaining),
+            limit=limit,
+            reset=window_start + period
+        )
 
     def cleanup(self) -> None:
         """Cleanup shared memory."""

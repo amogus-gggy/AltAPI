@@ -39,20 +39,35 @@ class RequestState:
 
 
 class Request:
-    __slots__ = ('scope', 'receive', 'method', 'path', 'query_string',
-                 'headers', 'path_params', '_body', '_headers_dict', 'state')
+    __slots__ = ('scope', 'receive', 'method', 'path', 'query_string_bytes',
+                 'headers', 'path_params', '_body', '_headers_dict', '_state', '_query_string')
 
     def __init__(self, scope: Dict[str, Any], receive: Callable, path_params=None):
         self.scope = scope
         self.receive = receive
-        self.method = scope.get("method", "GET")
-        self.path = scope.get("path", "/")
-        self.query_string = scope.get("query_string", b"").decode()
+        self.method = scope["method"]
+        self.path = scope["path"]
+        self.query_string_bytes = scope.get("query_string", b"")
         self.headers = scope.get("headers", [])  # Store as list of tuples
         self.path_params = path_params or {}
         self._body: Optional[bytes] = None
         self._headers_dict: Optional[Dict[str, str]] = None
-        self.state = RequestState()
+        self._state: Optional[RequestState] = None  # Lazy initialization
+        self._query_string: Optional[str] = None  # Lazy decode
+
+    @property
+    def query_string(self) -> str:
+        """Lazy decode of query string."""
+        if self._query_string is None:
+            self._query_string = self.query_string_bytes.decode()
+        return self._query_string
+
+    @property
+    def state(self) -> RequestState:
+        """Lazy initialization of RequestState."""
+        if self._state is None:
+            self._state = RequestState()
+        return self._state
 
     @property
     def headers_dict(self) -> Dict[str, str]:

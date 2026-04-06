@@ -117,8 +117,8 @@ class AltAPI:
         self._cache_backend: Optional[InMemoryCache] = None
         self._cache_timeout = cache_timeout
         self._cache_middleware: Optional[CacheMiddleware] = None
-        # Add CacheMiddleware to list (will be initialized in lifespan with InMemoryCache)
-        self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
+        # CacheMiddleware is NOT added by default - only added when @cache routes are registered
+        self._cache_middleware_needed = False
 
         # Initialize OpenAPI generator
         self._openapi_generator = OpenAPIGenerator(
@@ -184,6 +184,22 @@ class AltAPI:
         methods = methods or ["GET"]
 
         def decorator(func):
+            # Pre-compute handler metadata at registration time (performance optimization)
+            sig = inspect.signature(func)
+            is_async = inspect.iscoroutinefunction(func)
+            depends_map = get_dependencies_from_signature(sig)
+            handler_params = list(sig.parameters.keys())
+            has_request = 'request' in handler_params
+
+            # Store metadata on the function for fast access during requests
+            func._handler_meta = {
+                'sig': sig,
+                'is_async': is_async,
+                'depends_map': depends_map,
+                'handler_params': handler_params,
+                'has_request': has_request,
+            }
+
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
                 # Register route for OpenAPI
@@ -213,6 +229,10 @@ class AltAPI:
                 if not hasattr(self, "_cache_routes"):
                     self._cache_routes = []
                 self._cache_routes.append((path, cache_expires))
+                # Only add CacheMiddleware when we actually have cached routes
+                if not self._cache_middleware_needed:
+                    self._cache_middleware_needed = True
+                    self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=self._cache_timeout))
 
             return func
 
@@ -348,6 +368,10 @@ class AltAPI:
         if not hasattr(self, "_cache_routes"):
             self._cache_routes = []
         self._cache_routes.append((path, expires))
+        # Enable CacheMiddleware
+        if not self._cache_middleware_needed:
+            self._cache_middleware_needed = True
+            self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=self._cache_timeout))
 
         def decorator(func):
             # Add route as usual
@@ -514,8 +538,8 @@ class AltAPI:
             self._router.add_route(self._docs_url, "GET", swagger_ui_handler)
 
     async def _handle_http(self, scope, receive, send):
-        path = scope.get("path", "/")
-        method = scope.get("method", "GET")
+        path = scope["path"]
+        method = scope["method"]
 
         # Check mounted applications
         for mount_path, mounted_app in self._mounted_apps.items():
@@ -547,13 +571,37 @@ class AltAPI:
         if not handler:
             return await HTMLResponse(DEFAULT_404_BODY, 404)(scope, receive, send)
 
+        # Use pre-computed handler metadata (performance optimization)
+        handler_meta = getattr(handler, '_handler_meta', None)
+        if handler_meta is None:
+            # Fallback for handlers registered without decorator
+            sig = inspect.signature(handler)
+            is_async = inspect.iscoroutinefunction(handler)
+            depends_map = get_dependencies_from_signature(sig)
+            handler_params = list(sig.parameters.keys())
+            has_request = 'request' in handler_params
+        else:
+            sig = handler_meta['sig']
+            is_async = handler_meta['is_async']
+            depends_map = handler_meta['depends_map']
+            handler_params = handler_meta['handler_params']
+            has_request = handler_meta['has_request']
+
         request = Request(scope, receive, params)
 
-        # Extract dependencies from handler signature
-        sig = inspect.signature(handler)
-        depends_map = get_dependencies_from_signature(sig)
+        # Fast path: no dependencies (most common case) - no try/finally overhead
+        if not depends_map:
+            if is_async:
+                response = await handler(request)
+            else:
+                response = await asyncio.get_running_loop().run_in_executor(
+                    self._sync_executor,
+                    handler,
+                    request,
+                )
+            return await response(scope, receive, send)
 
-        # Create dependency injector for this request
+        # Slow path: with dependencies
         injector = DependencyInjector(request=request)
 
         try:
@@ -563,46 +611,33 @@ class AltAPI:
                 solved_values[param_name] = await injector.solve(depends.dependency)
 
             # Call handler with solved dependencies
-            if depends_map:
-                # Merge solved dependencies with request and path_params
-                call_kwargs = {**solved_values}
-                
-                # Add path_params to kwargs only if not already provided by DI
-                handler_params = list(sig.parameters.keys())
-                for param_name in handler_params:
-                    if param_name == 'request':
-                        continue
-                    # Skip if already in solved_values (from DI)
-                    if param_name not in call_kwargs and param_name in params:
-                        call_kwargs[param_name] = params[param_name]
-                
-                # Check if handler expects 'request' as first argument
-                if 'request' in handler_params:
-                    call_args = (request,)
-                else:
-                    call_args = ()
-                
-                if inspect.iscoroutinefunction(handler):
-                    response = await handler(*call_args, **call_kwargs)
-                else:
-                    response = await asyncio.get_running_loop().run_in_executor(
-                        self._sync_executor,
-                        handler,
-                        *call_args,
-                        **call_kwargs,
-                    )
-            else:
-                # No dependencies - call as before
-                if inspect.iscoroutinefunction(handler):
-                    response = await handler(request)
-                else:
-                    response = await asyncio.get_running_loop().run_in_executor(
-                        self._sync_executor,
-                        handler,
-                        request,
-                    )
+            call_kwargs = {**solved_values}
 
-            await response(scope, receive, send)
+            # Add path_params to kwargs only if not already provided by DI
+            for param_name in handler_params:
+                if param_name == 'request':
+                    continue
+                # Skip if already in solved_values (from DI)
+                if param_name not in call_kwargs and param_name in params:
+                    call_kwargs[param_name] = params[param_name]
+
+            # Check if handler expects 'request' as first argument
+            if has_request:
+                call_args = (request,)
+            else:
+                call_args = ()
+
+            if is_async:
+                response = await handler(*call_args, **call_kwargs)
+            else:
+                response = await asyncio.get_running_loop().run_in_executor(
+                    self._sync_executor,
+                    handler,
+                    *call_args,
+                    **call_kwargs,
+                )
+
+            return await response(scope, receive, send)
         except Exception as e:
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
             raise
@@ -649,7 +684,7 @@ class AltAPI:
         )
 
     async def _handle_ws(self, scope, receive, send):
-        path = scope.get("path", "/")
+        path = scope["path"]
 
         handler, params = self._router.find_websocket_handler(path)
         websocket = WebSocket(scope, receive, send, params)
