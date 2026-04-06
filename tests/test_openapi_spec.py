@@ -1,7 +1,5 @@
 """Tests for altapi.openapi_spec."""
 
-import inspect
-
 from altapi.depends import Depends
 from altapi.openapi_spec import (
     OpenAPIGenerator,

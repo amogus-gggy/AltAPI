@@ -3,6 +3,7 @@ AltAPI Full Example Application
 
 Demonstrates all major features.
 """
+
 from altapi import AltAPI
 from altapi.http import (
     JSONResponse,
@@ -13,8 +14,7 @@ from altapi.http import (
 )
 from altapi.websocket import WebSocket
 from altapi.templating import Jinja2Templates
-from altapi.caching import InMemoryCache, cache
-from altapi.ratelimit import rate_limit
+from altapi.caching import cache
 from altapi.openapi_decorators import openapi, tag, deprecated, describe_request_body
 import random
 import os
@@ -78,32 +78,34 @@ async def hello(request):
                         "properties": {
                             "message": {"type": "string"},
                             "timestamp": {"type": "number"},
-                        }
+                        },
                     }
+                }
+            },
+        }
+    },
+)
+async def cached_endpoint(request):
+    import time
+
+    return JSONResponse(
+        {"message": "This response is cached for 60 seconds", "timestamp": time.time()}
+    )
+
+
+@app.post("/api/echo")
+@describe_request_body(
+    {
+        "content": {
+            "application/json": {
+                "schema": {
+                    "type": "object",
+                    "description": "Any JSON data to be echoed back",
                 }
             }
         }
     }
 )
-async def cached_endpoint(request):
-    import time
-    return JSONResponse({
-        "message": "This response is cached for 60 seconds",
-        "timestamp": time.time()
-    })
-
-
-@app.post("/api/echo")
-@describe_request_body({
-    "content": {
-        "application/json": {
-            "schema": {
-                "type": "object",
-                "description": "Any JSON data to be echoed back"
-            }
-        }
-    }
-})
 @openapi(
     summary="Echo endpoint",
     description="Returns the received JSON data",
@@ -130,13 +132,13 @@ async def echo(request):
                         "properties": {
                             "id": {"type": "integer"},
                             "name": {"type": "string"},
-                        }
+                        },
                     }
                 }
-            }
+            },
         },
-        "404": {"description": "User not found"}
-    }
+        "404": {"description": "User not found"},
+    },
 )
 async def get_user(request):
     user_id = request.path_params["id"]  # int
@@ -346,6 +348,7 @@ async def broadcast(data: dict):
 
 # New response types examples
 
+
 @app.get("/api/text")
 async def text_response(request):
     """PlainTextResponse example."""
@@ -355,9 +358,11 @@ async def text_response(request):
 @app.get("/api/stream")
 async def stream_response(request):
     """StreamingResponse example."""
+
     async def generate():
         for i in range(10):
             yield f"Line {i}\n"
+
     return StreamingResponse(generate(), media_type="text/plain")
 
 
@@ -371,12 +376,12 @@ async def redirect_response(request):
 async def template_response(request):
     """Jinja2 template example."""
     return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "title": "AltAPI Templates", "user": "Guest"}
+        "index.html", {"request": request, "title": "AltAPI Templates", "user": "Guest"}
     )
 
 
 # Additional non-blocking endpoints for benchmark
+
 
 @app.get("/api/ping")
 async def ping(request):

@@ -7,11 +7,12 @@ Fast and lightweight DI with support for:
 - Async and sync dependencies
 - Auto-injection of Request
 """
+
 import inspect
-from typing import Any, Callable, Dict, List, Optional, AsyncIterator, Iterator, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .http.request import Request
+    pass
 
 
 class Depends:
@@ -31,20 +32,22 @@ class Depends:
             user = await db.get_user(id)
             return JSONResponse(user)
     """
-    __slots__ = ('dependency', 'use_cache')
+
+    __slots__ = ("dependency", "use_cache")
 
     def __init__(self, dependency: Callable, use_cache: bool = True):
         self.dependency = dependency
         self.use_cache = use_cache
 
     def __repr__(self):
-        dep_name = getattr(self.dependency, '__name__', repr(self.dependency))
+        dep_name = getattr(self.dependency, "__name__", repr(self.dependency))
         return f"Depends({dep_name})"
 
 
 class DependencyCache:
     """Per-request cache for dependencies."""
-    __slots__ = ('_cache',)
+
+    __slots__ = ("_cache",)
 
     def __init__(self):
         self._cache: Dict[Callable, Any] = {}
@@ -105,7 +108,10 @@ async def solve_dependency(
             kwargs[name] = value
         elif param.annotation is not inspect.Parameter.empty:
             # Check if parameter is Request type
-            if hasattr(param.annotation, '__name__') and param.annotation.__name__ == 'Request':
+            if (
+                hasattr(param.annotation, "__name__")
+                and param.annotation.__name__ == "Request"
+            ):
                 if request is not None:
                     kwargs[name] = request
             elif default is not inspect.Parameter.empty:
@@ -190,7 +196,8 @@ class DependencyInjector:
 
     Manages dependency resolution and cleanup for a single request.
     """
-    __slots__ = ('_cache', '_solved_deps', '_request')
+
+    __slots__ = ("_cache", "_solved_deps", "_request")
 
     def __init__(self, request: Any = None):
         self._cache = DependencyCache()

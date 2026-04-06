@@ -1,4 +1,5 @@
 """MyProject - Full-Featured AltAPI Application"""
+
 from altapi import AltAPI
 from altapi.templating import render_template
 import os

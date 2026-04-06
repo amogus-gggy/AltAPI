@@ -5,7 +5,8 @@ from typing import Callable, Any, Dict, Optional
 
 class RequestState:
     """Per-request state storage for passing data between middleware and handlers."""
-    __slots__ = ('_data',)
+
+    __slots__ = ("_data",)
 
     def __init__(self):
         self._data: Dict[str, Any] = {}
@@ -17,7 +18,7 @@ class RequestState:
             raise AttributeError(f"'RequestState' object has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: Any):
-        if name == '_data':
+        if name == "_data":
             super().__setattr__(name, value)
         else:
             self._data[name] = value
@@ -39,8 +40,19 @@ class RequestState:
 
 
 class Request:
-    __slots__ = ('scope', 'receive', 'method', 'path', 'query_string_bytes',
-                 'headers', 'path_params', '_body', '_headers_dict', '_state', '_query_string')
+    __slots__ = (
+        "scope",
+        "receive",
+        "method",
+        "path",
+        "query_string_bytes",
+        "headers",
+        "path_params",
+        "_body",
+        "_headers_dict",
+        "_state",
+        "_query_string",
+    )
 
     def __init__(self, scope: Dict[str, Any], receive: Callable, path_params=None):
         self.scope = scope
@@ -73,10 +85,7 @@ class Request:
     def headers_dict(self) -> Dict[str, str]:
         """Lazy conversion of headers to dict."""
         if self._headers_dict is None:
-            self._headers_dict = {
-                k.decode(): v.decode()
-                for k, v in self.headers
-            }
+            self._headers_dict = {k.decode(): v.decode() for k, v in self.headers}
         return self._headers_dict
 
     async def _get_body(self) -> bytes:
@@ -105,7 +114,7 @@ class Request:
         """Parse form data from request body."""
         body = await self._get_body()
         content_type = self.headers_dict.get("content-type", "")
-        
+
         if "application/x-www-form-urlencoded" in content_type:
             # Parse URL-encoded form data
             parsed = parse_qs(body.decode())
@@ -122,38 +131,38 @@ class Request:
         """Simple multipart form data parser."""
         content_type = self.headers_dict.get("content-type", "")
         boundary = None
-        
+
         # Extract boundary from content-type
         if "boundary=" in content_type:
             boundary = "--" + content_type.split("boundary=")[1].split(";")[0].strip()
-        
+
         if not boundary:
             return {}
-        
+
         result = {}
         parts = body.split(boundary.encode())[1:-1]  # Skip first and last empty
-        
+
         for part in parts:
             part = part.strip()
             if not part:
                 continue
-            
+
             # Find header end
             header_end = part.find(b"\r\n\r\n")
             if header_end == -1:
                 continue
-            
+
             headers = part[:header_end].decode()
-            value = part[header_end + 4:]  # Skip \r\n\r\n
-            
+            value = part[header_end + 4 :]  # Skip \r\n\r\n
+
             # Extract field name
             if 'name="' in headers:
                 name_start = headers.find('name="') + 6
                 name_end = headers.find('"', name_start)
                 field_name = headers[name_start:name_end]
-                
+
                 # Remove trailing \r\n from value
                 value_str = value.rstrip(b"\r\n").decode()
                 result[field_name] = value_str
-        
+
         return result

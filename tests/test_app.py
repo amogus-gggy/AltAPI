@@ -73,7 +73,11 @@ async def test_static_file_served(tmp_path):
     static = tmp_path / "st"
     static.mkdir()
     (static / "a.txt").write_text("file-content", encoding="utf-8")
-    app = AltAPI(enable_openapi=False, templates_directory=str(tmp_path), static_directory=str(static))
+    app = AltAPI(
+        enable_openapi=False,
+        templates_directory=str(tmp_path),
+        static_directory=str(static),
+    )
     await app._init_shared_resources()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

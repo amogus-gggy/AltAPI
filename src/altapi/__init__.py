@@ -13,7 +13,11 @@ from .http import (
     FileResponse as _FileResponse,
     RedirectResponse as _RedirectResponse,
 )
-from .middleware import BaseMiddleware as _BaseMiddleware, Middleware as _Middleware, ASGIApp as _ASGIApp
+from .middleware import (
+    BaseMiddleware as _BaseMiddleware,
+    Middleware as _Middleware,
+    ASGIApp as _ASGIApp,
+)
 from .websocket import WebSocket as _WebSocket, WebSocketState as _WebSocketState
 from .templating import (
     Jinja2Templates as _Jinja2Templates,
@@ -46,7 +50,10 @@ from .openapi_decorators import (
     describe_responses as _describe_responses,
     describe_request_body as _describe_request_body,
 )
-from .swagger import SwaggerUI as _SwaggerUI, get_swagger_ui_html as _get_swagger_ui_html
+from .swagger import (
+    SwaggerUI as _SwaggerUI,
+    get_swagger_ui_html as _get_swagger_ui_html,
+)
 
 
 # Mapping of attribute names to their correct import paths and actual objects
@@ -67,8 +74,14 @@ _IMPORT_MAPPING = {
     "Jinja2Templates": ("altapi.templating", _Jinja2Templates),
     "TemplateResponse": ("altapi.templating", _TemplateResponse),
     "render_template": ("altapi.templating", _render_template),
-    "set_default_templates_directory": ("altapi.templating", _set_default_templates_directory),
-    "get_default_templates_directory": ("altapi.templating", _get_default_templates_directory),
+    "set_default_templates_directory": (
+        "altapi.templating",
+        _set_default_templates_directory,
+    ),
+    "get_default_templates_directory": (
+        "altapi.templating",
+        _get_default_templates_directory,
+    ),
     "CacheBackend": ("altapi.caching", _CacheBackend),
     "InMemoryCache": ("altapi.caching", _InMemoryCache),
     "CacheManager": ("altapi.caching", _CacheManager),
@@ -102,10 +115,10 @@ def __getattr__(name: str) -> Any:
             stacklevel=2,
         )
         return obj
-    
+
     if name == "__version__":
         return "0.1.0"
-    
+
     raise AttributeError(f"module 'altapi' has no attribute '{name}'")
 
 

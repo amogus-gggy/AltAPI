@@ -3,6 +3,7 @@ OpenAPI decorators for AltAPI.
 
 Decorators for adding OpenAPI metadata to route handlers.
 """
+
 from typing import Any, Dict, List, Optional
 
 
@@ -12,7 +13,7 @@ def _merge_openapi_metadata(func, metadata: Dict[str, Any]) -> Any:
 
     Returns the same function object (no wrapper created).
     """
-    existing = getattr(func, '_openapi_metadata', {})
+    existing = getattr(func, "_openapi_metadata", {})
     merged = {**existing, **metadata}
     # Remove None values
     merged = {k: v for k, v in merged.items() if v is not None}
@@ -71,6 +72,7 @@ def openapi(
             user_id = request.path_params["id"]
             return JSONResponse({"id": user_id, "name": f"User {user_id}"})
     """
+
     def decorator(func):
         metadata = {
             "summary": summary,
@@ -101,6 +103,7 @@ def tag(*tag_names: str):
         async def list_users(request):
             return JSONResponse({"users": []})
     """
+
     def decorator(func):
         return _merge_openapi_metadata(func, {"tags": list(tag_names)})
 
@@ -152,13 +155,16 @@ def describe_responses(responses: Dict[str, Any]):
         async def get_item(request):
             ...
     """
+
     def decorator(func):
         return _merge_openapi_metadata(func, {"responses": responses})
 
     return decorator
 
 
-def describe_request_body(body_schema: Dict[str, Any], description: str = "Request body"):
+def describe_request_body(
+    body_schema: Dict[str, Any], description: str = "Request body"
+):
     """
     Decorator to add request body schema to a route handler.
 
@@ -189,11 +195,14 @@ def describe_request_body(body_schema: Dict[str, Any], description: str = "Reque
             data = await request.json()
             return JSONResponse({"id": 1, **data})
     """
+
     def decorator(func):
         metadata = {
             "request_body": {
                 "description": description,
-                "content": body_schema.get("content", {"application/json": {"schema": body_schema}}),
+                "content": body_schema.get(
+                    "content", {"application/json": {"schema": body_schema}}
+                ),
                 "required": body_schema.get("required", True),
             }
         }

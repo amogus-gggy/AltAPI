@@ -90,7 +90,7 @@ def test_random_async():
         assert data["type"] == "async"
         assert 1 <= data["value"] <= 100
         results.append(data["value"])
-        print(f"✓ Async random request {i+1}: {data['value']}")
+        print(f"✓ Async random request {i + 1}: {data['value']}")
     print(f"  Results: {results}")
 
 
@@ -105,7 +105,7 @@ def test_random_sync():
         assert data["type"] == "sync"
         assert 1 <= data["value"] <= 100
         results.append(data["value"])
-        print(f"✓ Sync random request {i+1}: {data['value']}")
+        print(f"✓ Sync random request {i + 1}: {data['value']}")
     print(f"  Results: {results}")
 
 
@@ -139,7 +139,10 @@ def test_static_file():
     """Test static file serving."""
     resp = requests.get(f"{BASE_URL}/static/style.css")
     assert resp.status_code == 200
-    assert "text/css" in resp.headers["Content-Type"] or "text/plain" in resp.headers["Content-Type"]
+    assert (
+        "text/css" in resp.headers["Content-Type"]
+        or "text/plain" in resp.headers["Content-Type"]
+    )
     assert "AltAPI Static" in resp.text or "body" in resp.text
     print("✓ Static file OK")
 
@@ -288,27 +291,27 @@ async def main():
         test_sync_handler()
         test_random_async()
         test_random_sync()
-        
+
         # New response types tests
         test_plain_text_response()
         test_streaming_response()
         test_redirect_response()
-        
+
         # Static files and templates
         test_static_file()
         test_static_file_not_found()
         test_template_response()
-        
+
         # New benchmark endpoints
         test_ping()
         test_status()
         test_post_data()
         test_sum()
         test_multiply()
-        
+
         # Error handling
         test_not_found()
-        
+
         # WebSocket tests
         await test_websocket_echo()
         await test_websocket_chat_with_room()

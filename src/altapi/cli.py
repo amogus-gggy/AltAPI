@@ -6,10 +6,10 @@ Provides commands for:
 - Running AltAPI applications
 - Managing project structure
 """
+
 import os
 import sys
 import subprocess
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -26,7 +26,9 @@ def _copy_template(template_name: str, target_dir: Path, project_name: str):
 
     if not template_dir.exists():
         click.echo(f"Error: Template '{template_name}' not found.", err=True)
-        click.echo(f"Available templates: {', '.join(_get_available_templates())}", err=True)
+        click.echo(
+            f"Available templates: {', '.join(_get_available_templates())}", err=True
+        )
         sys.exit(1)
 
     # Create target directory
@@ -40,11 +42,15 @@ def _copy_template(template_name: str, target_dir: Path, project_name: str):
         if item.is_file():
             # Ensure parent directory exists
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             content = item.read_text(encoding="utf-8")
             # Replace placeholder project name
-            content = content.replace("myproject", project_name.lower().replace(" ", "_").replace("-", "_"))
-            content = content.replace("MyProject", project_name.title().replace(" ", ""))
+            content = content.replace(
+                "myproject", project_name.lower().replace(" ", "_").replace("-", "_")
+            )
+            content = content.replace(
+                "MyProject", project_name.title().replace(" ", "")
+            )
             target_path.write_text(content, encoding="utf-8")
 
     click.echo(f"✓ Created project '{project_name}' in {target_dir}")
@@ -124,8 +130,16 @@ def cli():
 
 @cli.command()
 @click.argument("name", required=True)
-@click.option("--template", "-t", default="basic", help="Template name to use (default: basic)")
-@click.option("--dir", "-d", "target_dir", default=None, help="Target directory (default: current directory / project name)")
+@click.option(
+    "--template", "-t", default="basic", help="Template name to use (default: basic)"
+)
+@click.option(
+    "--dir",
+    "-d",
+    "target_dir",
+    default=None,
+    help="Target directory (default: current directory / project name)",
+)
 def create(name: str, template: str, target_dir: Optional[str]):
     """
     Create a new AltAPI project from template.
@@ -147,7 +161,9 @@ def create(name: str, template: str, target_dir: Optional[str]):
         altapi create myapi -t full
     """
     project_name = name
-    target_path = Path(target_dir) / project_name if target_dir else Path.cwd() / project_name
+    target_path = (
+        Path(target_dir) / project_name if target_dir else Path.cwd() / project_name
+    )
 
     click.echo(f"Creating AltAPI project '{project_name}'...")
     click.echo(f"Template: {template}")
@@ -168,13 +184,34 @@ def create(name: str, template: str, target_dir: Optional[str]):
 
 @cli.command()
 @click.argument("app_path", default="app:app")
-@click.option("--host", "-h", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+@click.option(
+    "--host", "-h", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
+)
 @click.option("--port", "-p", default=8000, help="Port to bind to (default: 8000)")
-@click.option("--workers", "-w", default=1, help="Number of worker processes (default: 1)")
+@click.option(
+    "--workers", "-w", default=1, help="Number of worker processes (default: 1)"
+)
 @click.option("--reload", "-r", is_flag=True, help="Enable auto-reload on code changes")
-@click.option("--log-level", default="info", type=click.Choice(["critical", "error", "warning", "info", "debug"]), help="Log level (default: info)")
-@click.option("--app-dir", default=None, help="Directory containing app module (default: auto-detect)")
-def run(app_path: str, host: str, port: int, workers: int, reload: bool, log_level: str, app_dir: Optional[str]):
+@click.option(
+    "--log-level",
+    default="info",
+    type=click.Choice(["critical", "error", "warning", "info", "debug"]),
+    help="Log level (default: info)",
+)
+@click.option(
+    "--app-dir",
+    default=None,
+    help="Directory containing app module (default: auto-detect)",
+)
+def run(
+    app_path: str,
+    host: str,
+    port: int,
+    workers: int,
+    reload: bool,
+    log_level: str,
+    app_dir: Optional[str],
+):
     """
     Run an AltAPI application.
 
@@ -227,11 +264,16 @@ def run(app_path: str, host: str, port: int, workers: int, reload: bool, log_lev
         app_file = Path(app_dir) / f"{module_path}.py"
 
         if not app_file.exists():
-            click.echo(f"Error: App file '{module_base_name}.py' not found in '{app_dir}'.", err=True)
-            click.echo("Make sure you're in the correct directory or use --app-dir.", err=True)
+            click.echo(
+                f"Error: App file '{module_base_name}.py' not found in '{app_dir}'.",
+                err=True,
+            )
+            click.echo(
+                "Make sure you're in the correct directory or use --app-dir.", err=True
+            )
             sys.exit(1)
 
-    click.echo(f"Starting AltAPI server...")
+    click.echo("Starting AltAPI server...")
     click.echo(f"  App: {app_path}")
     click.echo(f"  Host: {host}")
     click.echo(f"  Port: {port}")
@@ -243,7 +285,7 @@ def run(app_path: str, host: str, port: int, workers: int, reload: bool, log_lev
 
     # Change to app directory
     original_dir = os.getcwd()
-    
+
     # If we changed directory, add the original directory to PYTHONPATH
     # so that dotted module paths like "examples.app:app" can be found
     env = os.environ.copy()
@@ -252,19 +294,30 @@ def run(app_path: str, host: str, port: int, workers: int, reload: bool, log_lev
         parent_dir = str(Path(app_dir).parent.resolve())
         if parent_dir not in env.get("PYTHONPATH", ""):
             current_pythonpath = env.get("PYTHONPATH", "")
-            env["PYTHONPATH"] = f"{parent_dir}{os.pathsep}{current_pythonpath}" if current_pythonpath else parent_dir
+            env["PYTHONPATH"] = (
+                f"{parent_dir}{os.pathsep}{current_pythonpath}"
+                if current_pythonpath
+                else parent_dir
+            )
 
     os.chdir(app_dir)
 
     # Build uvicorn command
     cmd = [
-        sys.executable, "-m", "uvicorn",
+        sys.executable,
+        "-m",
+        "uvicorn",
         app_path,
-        "--host", host,
-        "--port", str(port),
-        "--workers", str(workers),
-        "--log-level", log_level,
-        "--http", "httptools",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--workers",
+        str(workers),
+        "--log-level",
+        log_level,
+        "--http",
+        "httptools",
     ]
 
     if reload:
@@ -402,7 +455,9 @@ def scaffold(name: str, target_dir: Optional[str]):
     NAME is the project name (default: myproject).
     """
     project_name = name
-    target_path = Path(target_dir) / project_name if target_dir else Path.cwd() / project_name
+    target_path = (
+        Path(target_dir) / project_name if target_dir else Path.cwd() / project_name
+    )
 
     click.echo(f"Scaffolding full AltAPI project '{project_name}'...")
     click.echo(f"Location: {target_path}")
@@ -511,7 +566,7 @@ def register_routes(app):
     click.echo("✓ Created routes/pages.py")
 
     # Create base.html template
-    template_content = '''<!DOCTYPE html>
+    template_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -537,12 +592,14 @@ def register_routes(app):
     <script src="/static/js/main.js"></script>
 </body>
 </html>
-'''
-    (target_path / "templates" / "base.html").write_text(template_content, encoding="utf-8")
+"""
+    (target_path / "templates" / "base.html").write_text(
+        template_content, encoding="utf-8"
+    )
     click.echo("✓ Created templates/base.html")
 
     # Create index.html template
-    index_content = '''{% extends "base.html" %}
+    index_content = """{% extends "base.html" %}
 
 {% block title %}Home - MyProject{% endblock %}
 
@@ -601,12 +658,14 @@ def register_routes(app):
     </div>
 </div>
 {% endblock %}
-'''
-    (target_path / "templates" / "index.html").write_text(index_content, encoding="utf-8")
+"""
+    (target_path / "templates" / "index.html").write_text(
+        index_content, encoding="utf-8"
+    )
     click.echo("✓ Created templates/index.html")
 
     # Create style.css
-    css_content = '''/* Main Styles */
+    css_content = """/* Main Styles */
 * {
     box-sizing: border-box;
 }
@@ -760,16 +819,18 @@ footer {
 .api-link:hover {
     background: #5568d3;
 }
-'''
-    (target_path / "static" / "css" / "style.css").write_text(css_content, encoding="utf-8")
+"""
+    (target_path / "static" / "css" / "style.css").write_text(
+        css_content, encoding="utf-8"
+    )
     click.echo("✓ Created static/css/style.css")
 
     # Create main.js
-    js_content = '''// Main JavaScript
+    js_content = """// Main JavaScript
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Application loaded');
 });
-'''
+"""
     (target_path / "static" / "js" / "main.js").write_text(js_content, encoding="utf-8")
     click.echo("✓ Created static/js/main.js")
 

@@ -27,9 +27,18 @@ class _HeadersMixin:
 
 
 class Response(_HeadersMixin):
-    __slots__ = ('status_code', 'headers', 'media_type', '_encoded_headers', '_encoded_body', 'content')
+    __slots__ = (
+        "status_code",
+        "headers",
+        "media_type",
+        "_encoded_headers",
+        "_encoded_body",
+        "content",
+    )
 
-    def __init__(self, content="", status_code=200, headers=None, media_type="text/plain"):
+    def __init__(
+        self, content="", status_code=200, headers=None, media_type="text/plain"
+    ):
         self.content = content
         self.status_code = status_code
         self.headers = headers or {}
@@ -41,20 +50,24 @@ class Response(_HeadersMixin):
             self._encoded_body = content
         elif isinstance(content, str):
             # UTF-8 for text, latin-1 for compatibility
-            self._encoded_body = content.encode('utf-8')
+            self._encoded_body = content.encode("utf-8")
 
     async def __call__(self, scope, receive, send):
-        await send({
-            "type": "http.response.start",
-            "status": self.status_code,
-            "headers": self._get_encoded_headers(),
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": self.status_code,
+                "headers": self._get_encoded_headers(),
+            }
+        )
 
-        await send({
-            "type": "http.response.body",
-            "body": self._encoded_body,
-            "more_body": False,  # CRITICAL for ASGI
-        })
+        await send(
+            {
+                "type": "http.response.body",
+                "body": self._encoded_body,
+                "more_body": False,  # CRITICAL for ASGI
+            }
+        )
 
     def _get_encoded_headers(self):
         if self._encoded_headers is None:
@@ -98,7 +111,7 @@ class PlainTextResponse(Response):
 
 class RedirectResponse(Response):
     """Redirect to another URL.
-    
+
     Uses status code 303 (See Other) by default to redirect POST requests to GET.
     """
 
@@ -117,11 +130,11 @@ class StreamingResponse(_HeadersMixin):
     """Streaming response for sending data in chunks."""
 
     def __init__(
-            self,
-            content: Union[AsyncIterator[bytes], AsyncIterator[str], Callable],
-            status_code: int = 200,
-            headers: Optional[Dict[str, str]] = None,
-            media_type: str = "text/plain",
+        self,
+        content: Union[AsyncIterator[bytes], AsyncIterator[str], Callable],
+        status_code: int = 200,
+        headers: Optional[Dict[str, str]] = None,
+        media_type: str = "text/plain",
     ):
         self.content_iterator = content
         self.status_code = status_code
@@ -130,11 +143,13 @@ class StreamingResponse(_HeadersMixin):
         self._encoded_headers: Optional[List[tuple]] = None
 
     async def __call__(self, scope, receive, send):
-        await send({
-            "type": "http.response.start",
-            "status": self.status_code,
-            "headers": self._get_encoded_headers(),
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": self.status_code,
+                "headers": self._get_encoded_headers(),
+            }
+        )
 
         if callable(self.content_iterator):
             iterator = self.content_iterator()
@@ -144,17 +159,21 @@ class StreamingResponse(_HeadersMixin):
         async for chunk in iterator:
             if isinstance(chunk, str):
                 chunk = chunk.encode()
-            await send({
-                "type": "http.response.body",
-                "body": chunk,
-                "more_body": True,
-            })
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": chunk,
+                    "more_body": True,
+                }
+            )
 
-        await send({
-            "type": "http.response.body",
-            "body": b"",
-            "more_body": False,
-        })
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"",
+                "more_body": False,
+            }
+        )
 
     def _get_encoded_headers(self):
         if self._encoded_headers is None:
@@ -164,15 +183,16 @@ class StreamingResponse(_HeadersMixin):
 
 class FileResponse(Response):
     """Response with file content (with support for range requests)."""
+
     chunk_size = 64 * 1024
 
     def __init__(
-            self,
-            path: Union[str, os.PathLike],
-            status_code: int = 200,
-            headers: Optional[Dict[str, str]] = None,
-            media_type: Optional[str] = None,
-            filename: Optional[str] = None,
+        self,
+        path: Union[str, os.PathLike],
+        status_code: int = 200,
+        headers: Optional[Dict[str, str]] = None,
+        media_type: Optional[str] = None,
+        filename: Optional[str] = None,
     ):
         self.path = path
         self.filename = filename or os.path.basename(path)
@@ -274,11 +294,13 @@ class FileResponse(Response):
 
         encoded_headers = [(k.encode(), v.encode()) for k, v in headers.items()]
 
-        await send({
-            "type": "http.response.start",
-            "status": self.status_code,
-            "headers": encoded_headers,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": self.status_code,
+                "headers": encoded_headers,
+            }
+        )
 
         # Read and send the file
         try:
@@ -292,18 +314,22 @@ class FileResponse(Response):
                     chunk = await f.read(chunk_size)
                     if not chunk:
                         break
-                    await send({
-                        "type": "http.response.body",
-                        "body": chunk,
-                        "more_body": True,
-                    })
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": chunk,
+                            "more_body": True,
+                        }
+                    )
                     remaining -= len(chunk)
         except (FileNotFoundError, PermissionError):
             # File was deleted or access denied during read
             pass
 
-        await send({
-            "type": "http.response.body",
-            "body": b"",
-            "more_body": False,
-        })
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"",
+                "more_body": False,
+            }
+        )

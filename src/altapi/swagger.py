@@ -3,8 +3,6 @@ SwaggerUI integration for AltAPI.
 
 Provides SwaggerUI HTML page and helper functions.
 """
-from typing import Optional
-
 
 # SwaggerUI HTML template
 SWAGGER_UI_TEMPLATE = """
@@ -78,7 +76,7 @@ def get_swagger_ui_html(
 ) -> str:
     """
     Generate SwaggerUI HTML page.
-    
+
     Args:
         openapi_url: URL path to OpenAPI JSON specification
         title: Page title
@@ -88,15 +86,21 @@ def get_swagger_ui_html(
         default_models_expand_depth: Default expansion depth for models
         default_model_expand_depth: Default expansion depth for model
         doc_expansion: Controls the default expansion setting of the operations and tags
-        
+
     Returns:
         HTML string for SwaggerUI page
     """
-    display_request_duration_str = f'displayRequestDuration: {"true" if display_request_duration else "false"},'
-    default_models_expand_depth_str = f'defaultModelsExpandDepth: {default_models_expand_depth},'
-    default_model_expand_depth_str = f'defaultModelExpandDepth: {default_model_expand_depth},'
+    display_request_duration_str = (
+        f"displayRequestDuration: {'true' if display_request_duration else 'false'},"
+    )
+    default_models_expand_depth_str = (
+        f"defaultModelsExpandDepth: {default_models_expand_depth},"
+    )
+    default_model_expand_depth_str = (
+        f"defaultModelExpandDepth: {default_model_expand_depth},"
+    )
     doc_expansion_str = f'docExpansion: "{doc_expansion}",'
-    
+
     html = SWAGGER_UI_TEMPLATE.format(
         title=title,
         openapi_url=openapi_url,
@@ -105,17 +109,17 @@ def get_swagger_ui_html(
         default_model_expand_depth=default_model_expand_depth_str,
         doc_expansion=doc_expansion_str,
     )
-    
+
     return html.strip()
 
 
 class SwaggerUI:
     """
     SwaggerUI helper for AltAPI applications.
-    
+
     Provides easy integration of SwaggerUI documentation.
     """
-    
+
     def __init__(
         self,
         openapi_url: str = "/openapi.json",
@@ -128,7 +132,7 @@ class SwaggerUI:
     ):
         """
         Initialize SwaggerUI.
-        
+
         Args:
             openapi_url: URL path to OpenAPI JSON specification
             swagger_ui_url: URL path to SwaggerUI page
@@ -145,11 +149,11 @@ class SwaggerUI:
         self.default_models_expand_depth = default_models_expand_depth
         self.default_model_expand_depth = default_model_expand_depth
         self.doc_expansion = doc_expansion
-    
+
     def get_html(self) -> str:
         """
         Get SwaggerUI HTML page.
-        
+
         Returns:
             HTML string for SwaggerUI page
         """
@@ -161,31 +165,35 @@ class SwaggerUI:
             default_model_expand_depth=self.default_model_expand_depth,
             doc_expansion=self.doc_expansion,
         )
-    
+
     def register(self, app):
         """
         Register SwaggerUI routes with AltAPI application.
-        
+
         Args:
             app: AltAPI application instance
         """
         from altapi.http.responses import HTMLResponse, JSONResponse
-        
+
         # Store reference to generator
         swagger = self
-        
+
         @app.get(self.swagger_ui_url)
         async def swagger_ui(request):
             """Serve SwaggerUI page."""
             html = swagger.get_html()
             return HTMLResponse(html)
-        
+
         @app.get(self.openapi_url)
         async def openapi_json(request):
             """Serve OpenAPI specification as JSON."""
             # Access the generator from app
-            if hasattr(app, '_openapi_generator'):
+            if hasattr(app, "_openapi_generator"):
                 spec = app._openapi_generator.generate()
             else:
-                spec = {"openapi": "3.0.3", "info": {"title": "AltAPI", "version": "0.1.0"}, "paths": {}}
+                spec = {
+                    "openapi": "3.0.3",
+                    "info": {"title": "AltAPI", "version": "0.1.0"},
+                    "paths": {},
+                }
             return JSONResponse(spec)

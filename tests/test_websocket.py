@@ -18,7 +18,9 @@ async def test_websocket_accept_and_text():
     async def send(m):
         sent.append(m)
 
-    ws = WebSocket({"type": "websocket", "path": "/ws", "headers": []}, receive, send, {})
+    ws = WebSocket(
+        {"type": "websocket", "path": "/ws", "headers": []}, receive, send, {}
+    )
     await ws.accept()
     await ws.send_text("hi")
     assert ws.state == WebSocketState.CONNECTED

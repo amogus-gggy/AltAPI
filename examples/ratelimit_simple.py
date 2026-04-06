@@ -19,11 +19,13 @@ async def get_data(request):
 
 
 @app.get("/api/premium")
-@rate_limit_batch([
-    (10, 60),       # 10 per minute
-    (100, 3600),    # 100 per hour
-    (1000, 86400),  # 1000 per day
-])
+@rate_limit_batch(
+    [
+        (10, 60),  # 10 per minute
+        (100, 3600),  # 100 per hour
+        (1000, 86400),  # 1000 per day
+    ]
+)
 async def get_premium(request):
     return JSONResponse({"premium": "data"})
 

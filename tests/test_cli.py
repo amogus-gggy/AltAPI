@@ -46,5 +46,7 @@ def test_show_template_basic():
 def test_copy_template_missing_exits(tmp_path):
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(cli, ["create", "x", "--template", "does_not_exist_ever"])
+        result = runner.invoke(
+            cli, ["create", "x", "--template", "does_not_exist_ever"]
+        )
         assert result.exit_code != 0

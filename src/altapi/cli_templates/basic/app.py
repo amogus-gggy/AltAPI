@@ -1,7 +1,8 @@
 """MyProject - AltAPI Application"""
+
 from altapi import AltAPI
 from altapi.http import JSONResponse
-from altapi.openapi_decorators import openapi, tag
+from altapi.openapi_decorators import openapi
 
 app = AltAPI(
     title="MyProject API",

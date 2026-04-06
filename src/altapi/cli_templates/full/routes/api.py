@@ -1,4 +1,5 @@
 """API Routes"""
+
 from altapi.http import JSONResponse
 from altapi.openapi_decorators import openapi
 

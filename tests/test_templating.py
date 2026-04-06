@@ -1,10 +1,7 @@
 """Tests for altapi.templating."""
 
-import pytest
-
 from altapi.templating import (
     Jinja2Templates,
-    TemplateResponse,
     get_default_templates_directory,
     render_template,
     set_default_templates_directory,

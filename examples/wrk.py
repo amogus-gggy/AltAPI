@@ -1,11 +1,8 @@
 from altapi import AltAPI
 from altapi.caching import cache, InMemoryCache, CacheManager
 from altapi.http import JSONResponse, PlainTextResponse
-from altapi.ratelimit import rate_limit
 from altapi.templating import render_template
 from pathlib import Path
-
-import os
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -17,14 +14,17 @@ app = AltAPI(
 # Set InMemoryCache as default for this benchmark
 CacheManager.set_default_backend(InMemoryCache(max_size=10000))
 
+
 @app.get("/json")
-#@rate_limit(10000000000)
+# @rate_limit(10000000000)
 async def bench(request):
-    return JSONResponse({"test":"test"})
+    return JSONResponse({"test": "test"})
+
 
 @app.get("/plaintext")
 async def bench2(request):
     return PlainTextResponse("Plain text!")
+
 
 @app.get("/template")
 @cache(expires=300)

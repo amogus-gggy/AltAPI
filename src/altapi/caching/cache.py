@@ -5,15 +5,16 @@ Optimized for high-performance JSON response caching.
 Uses per-worker InMemoryCache for zero IPC overhead.
 For shared caching across workers, use a reverse proxy cache (e.g., Varnish).
 """
+
 import time
 import asyncio
 from collections import OrderedDict
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Callable, Union, List, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Optional, Callable, Union, List, TYPE_CHECKING
 from functools import wraps
 
 if TYPE_CHECKING:
-    from ..middleware.middleware import BaseMiddleware
+    pass
 
 
 class CacheEntry:
@@ -21,15 +22,15 @@ class CacheEntry:
     Ultra-lightweight cache entry with __slots__.
     Headers stored as list of tuples for ASGI compatibility.
     """
-    __slots__ = ('status', 'headers', 'body', 'expires_at')
+
+    __slots__ = ("status", "headers", "body", "expires_at")
 
     def __init__(self, status: int, headers: Any, body: bytes, expires_at: float):
         self.status = status
         # Convert headers to list of tuples for ASGI compatibility
         if isinstance(headers, (list, tuple)):
             self.headers = [
-                tuple(h) if isinstance(h, (list, tuple)) else h
-                for h in headers
+                tuple(h) if isinstance(h, (list, tuple)) else h for h in headers
             ]
         else:
             self.headers = headers
@@ -67,7 +68,7 @@ class InMemoryCache(CacheBackend):
     No locks - asyncio is single-threaded.
     """
 
-    __slots__ = ('_cache', '_max_size')
+    __slots__ = ("_cache", "_max_size")
 
     def __init__(self, max_size: int = 10000):
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -135,7 +136,8 @@ class InMemoryCache(CacheBackend):
         """Clean up expired entries."""
         now = time.monotonic()
         expired = [
-            k for k, e in self._cache.items()
+            k
+            for k, e in self._cache.items()
             if e.expires_at != 0.0 and now > e.expires_at
         ]
         for k in expired:
@@ -195,6 +197,7 @@ def cache(
         async def get_data(request):
             return JSONResponse({"data": "expensive"})
     """
+
     def decorator(func: Callable) -> Callable:
         # Store metadata for app.route() to detect
         func._cache_expires = expires
@@ -224,19 +227,21 @@ def cache(
 class CacheMiddleware:
     """
     ASGI middleware for automatic request caching.
-    
+
     Only use this if you need middleware-based caching.
     For better performance, use @cache decorator directly.
-    
+
     Example:
         app = AltAPI(middleware=[
             Middleware(CacheMiddleware, cache_timeout=300)
         ])
     """
 
-    __slots__ = ('app', 'cache_timeout', '_backend', '_cached_handlers', '_backend_ref')
+    __slots__ = ("app", "cache_timeout", "_backend", "_cached_handlers", "_backend_ref")
 
-    def __init__(self, app, cache_timeout: int = 300, backend: Optional[CacheBackend] = None):
+    def __init__(
+        self, app, cache_timeout: int = 300, backend: Optional[CacheBackend] = None
+    ):
         self.app = app
         self.cache_timeout = cache_timeout
         self._backend = backend
@@ -276,7 +281,9 @@ class CacheMiddleware:
 
         # Generate cache key (only for cached routes)
         query_string = scope.get("query_string", b"")
-        cache_key = f"http:{path}:{query_string.decode()}" if query_string else f"http:{path}:"
+        cache_key = (
+            f"http:{path}:{query_string.decode()}" if query_string else f"http:{path}:"
+        )
 
         # Try cache
         backend = self.backend
@@ -284,21 +291,26 @@ class CacheMiddleware:
             cached_result = await backend.get(cache_key)
         except Exception as e:
             import sys
+
             print(f"[CacheMiddleware] Cache get error: {e}", file=sys.stderr)
             cached_result = None
 
         if cached_result is not None:
             # Cache hit - send directly (CacheEntry only)
-            await send({
-                "type": "http.response.start",
-                "status": cached_result.status,
-                "headers": cached_result.headers,
-            })
-            await send({
-                "type": "http.response.body",
-                "body": cached_result.body,
-                "more_body": False,
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": cached_result.status,
+                    "headers": cached_result.headers,
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": cached_result.body,
+                    "more_body": False,
+                }
+            )
             return
 
         # Cache miss - intercept response
@@ -333,7 +345,11 @@ class CacheMiddleware:
                             await backend.set(cache_key, cache_entry, expires=None)
                         except Exception as e:
                             import sys
-                            print(f"[CacheMiddleware] Cache set error: {e}", file=sys.stderr)
+
+                            print(
+                                f"[CacheMiddleware] Cache set error: {e}",
+                                file=sys.stderr,
+                            )
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
@@ -344,9 +360,9 @@ class CacheMiddleware:
             return True
 
         # Fast path stripping
-        if pattern and pattern[0] == '/':
+        if pattern and pattern[0] == "/":
             pattern = pattern[1:]
-        if path and path[0] == '/':
+        if path and path[0] == "/":
             path = path[1:]
 
         path_parts = path.split("/")
@@ -356,7 +372,7 @@ class CacheMiddleware:
             return False
 
         for pp, patp in zip(path_parts, pattern_parts):
-            if patp and patp[0] == '{':
+            if patp and patp[0] == "{":
                 continue
             if pp != patp:
                 return False

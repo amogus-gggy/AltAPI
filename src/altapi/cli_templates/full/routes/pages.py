@@ -1,4 +1,5 @@
 """Page Routes"""
+
 from altapi.http import HTMLResponse
 from altapi.openapi_decorators import openapi
 

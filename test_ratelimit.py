@@ -79,7 +79,7 @@ async def test_rate_limit(
         await asyncio.gather(*tasks)
 
     print("-" * 60)
-    print(f"Results:")
+    print("Results:")
     print(f"  200 OK:           {results['200']}")
     print(f"  429 Rate Limited: {results['429']}")
     print(f"  Other:            {results['other']}")

@@ -21,7 +21,7 @@ warnings.warn(
     "Rate limiting now uses shared memory directly. "
     "Use altapi.ratelimit.SharedMemoryRateLimitStorage instead.",
     DeprecationWarning,
-    stacklevel=2
+    stacklevel=2,
 )
 
 __all__ = []

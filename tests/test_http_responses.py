@@ -6,8 +6,6 @@ import httpx
 from altapi.http.responses import (
     Response,
     JSONResponse,
-    HTMLResponse,
-    PlainTextResponse,
     RedirectResponse,
     StreamingResponse,
     FileResponse,

@@ -1,6 +1,7 @@
 """
 Module for working with Jinja2 templates.
 """
+
 import os
 from typing import Any, Dict, Optional, Union
 
@@ -9,26 +10,31 @@ from ..http.responses import HTMLResponse
 # Import Jinja2 Undefined for subclass check
 try:
     from jinja2 import Undefined
-    
+
     class _SilentUndefined(Undefined):
         """Silent undefined handler for faster template rendering."""
+
         __slots__ = ()
-        
+
         def __str__(self) -> str:
             return ""
-        
+
         def __iter__(self):
             return iter(())
-        
+
         def __bool__(self) -> bool:
             return False
 except ImportError:
+
     class _SilentUndefined:  # type: ignore
         __slots__ = ()
+
         def __str__(self) -> str:
             return ""
+
         def __iter__(self):
             return iter(())
+
         def __bool__(self) -> bool:
             return False
 
@@ -61,7 +67,7 @@ def get_default_templates_directory() -> str:
 class Jinja2Templates:
     """
     Optimized Jinja2 templates with compiled template cache.
-    
+
     Uses auto_reload=False and precompiled templates for maximum performance.
     """
 
@@ -71,7 +77,7 @@ class Jinja2Templates:
         self,
         directory: Union[str, os.PathLike],
         auto_reload: bool = False,
-        **env_options
+        **env_options,
     ):
         """
         Initialize Jinja2 templates.
@@ -84,7 +90,9 @@ class Jinja2Templates:
         try:
             from jinja2 import Environment, FileSystemLoader
         except ImportError:
-            raise ImportError("Jinja2 is not installed. Installation: pip install jinja2")
+            raise ImportError(
+                "Jinja2 is not installed. Installation: pip install jinja2"
+            )
 
         self.directory = str(directory)
 
@@ -127,15 +135,15 @@ class Jinja2Templates:
             status_code=status_code,
             headers=headers,
         )
-    
+
     def render(self, name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
         Fast template rendering without response object.
-        
+
         Args:
             name: Template file name
             context: Context for rendering
-            
+
         Returns:
             Rendered template string
         """
@@ -146,7 +154,7 @@ class Jinja2Templates:
 class TemplateResponse(HTMLResponse):
     """
     Optimized response with a rendered HTML template.
-    
+
     Renders template at initialization (eager loading) for caching compatibility.
     """
 
@@ -183,7 +191,7 @@ def render_template(
 ) -> HTMLResponse:
     """
     Optimized function for rendering a Jinja2 template.
-    
+
     Uses cached Environment for better performance.
 
     Args:
@@ -208,7 +216,7 @@ def render_template(
     # Use the provided directory or the default directory
     if templates_directory is None:
         templates_directory = get_default_templates_directory()
-    
+
     dir_str = str(templates_directory)
 
     # Get or create cached environment
@@ -219,7 +227,7 @@ def render_template(
             autoescape=True,
             cache_size=4096,
             auto_reload=False,
-            **jinja_options
+            **jinja_options,
         )
         _template_env_cache[dir_str] = env
 

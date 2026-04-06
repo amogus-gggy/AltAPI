@@ -93,7 +93,9 @@ async def test_cache_middleware_hit():
                 "headers": [(b"content-type", b"text/plain")],
             }
         )
-        await send({"type": "http.response.body", "body": b"cached-body", "more_body": False})
+        await send(
+            {"type": "http.response.body", "body": b"cached-body", "more_body": False}
+        )
 
     mw = CacheMiddleware(inner_app, cache_timeout=300, backend=backend)
     mw.register_handler("/api/x", 3600)

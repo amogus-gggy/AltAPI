@@ -20,13 +20,15 @@ app = AltAPI(cache_timeout=300)  # 5 minutes by default
 
 @app.get("/")
 async def home(request):
-    return JSONResponse({
-        "message": "Welcome to AltAPI Caching Example",
-        "endpoints": [
-            "/api/expensive - Expensive operation (cached for 5 minutes)",
-            "/api/data - Data with different cache times",
-        ]
-    })
+    return JSONResponse(
+        {
+            "message": "Welcome to AltAPI Caching Example",
+            "endpoints": [
+                "/api/expensive - Expensive operation (cached for 5 minutes)",
+                "/api/data - Data with different cache times",
+            ],
+        }
+    )
 
 
 # Option 1: Using @cache decorator
@@ -36,11 +38,14 @@ async def expensive_operation(request):
     """Expensive operation, result is cached."""
     print("called")
     await asyncio.sleep(2)  # Simulate long operation
-    return JSONResponse({
-        "message": "Expensive operation completed",
-        "timestamp": time.time(),
-        "note": "First call takes 2 seconds, subsequent calls are instant (from cache)"
-    })
+    return JSONResponse(
+        {
+            "message": "Expensive operation completed",
+            "timestamp": time.time(),
+            "note": "First call takes 2 seconds, subsequent calls are instant (from cache)",
+        }
+    )
+
 
 # Option 1: Using @cache decorator
 @app.get("/api/expensive/{id:int}")
@@ -49,12 +54,14 @@ async def expensive_operation_by_id(request):
     """Expensive operation with ID parameter, result is cached."""
     print("called")
     await asyncio.sleep(2)  # Simulate long operation
-    return JSONResponse({
-        "message": "Expensive operation completed",
-        "timestamp": time.time(),
-        "note": "First call takes 2 seconds, subsequent calls are instant (from cache)",
-        "id": request.path_params["id"]
-    })
+    return JSONResponse(
+        {
+            "message": "Expensive operation completed",
+            "timestamp": time.time(),
+            "note": "First call takes 2 seconds, subsequent calls are instant (from cache)",
+            "id": request.path_params["id"],
+        }
+    )
 
 
 # Option 2: Using app.cache()
@@ -62,10 +69,12 @@ async def expensive_operation_by_id(request):
 @app.get("/api/data")
 async def get_data(request):
     """Data that updates once per minute."""
-    return JSONResponse({
-        "data": [1, 2, 3, 4, 5],
-        "timestamp": time.time(),
-    })
+    return JSONResponse(
+        {
+            "data": [1, 2, 3, 4, 5],
+            "timestamp": time.time(),
+        }
+    )
 
 
 if __name__ == "__main__":

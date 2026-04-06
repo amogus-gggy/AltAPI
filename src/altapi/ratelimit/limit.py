@@ -7,9 +7,8 @@ No network overhead - uses multiprocessing.shared_memory for IPC.
 
 import asyncio
 import time
-import warnings
 from functools import wraps
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, Optional
 
 from ..http.responses import JSONResponse
 from .storage import (
@@ -102,7 +101,11 @@ def rate_limit(
                 if asyncio.iscoroutine(result):
                     result = await result
                 if result:
-                    return await func(request, *args, **kwargs) if is_async else func(request, *args, **kwargs)
+                    return (
+                        await func(request, *args, **kwargs)
+                        if is_async
+                        else func(request, *args, **kwargs)
+                    )
 
             # Get rate limit key
             if has_custom_key:
@@ -203,8 +206,8 @@ def rate_limit_batch(
             key = f"{func.__module__}:{func.__name__}:{key}"
 
             # Check all limits
-            min_remaining = float('inf')
-            min_reset = float('inf')
+            min_remaining = float("inf")
+            min_reset = float("inf")
             exceeded_limit = None
             exceeded_reset = None
 
