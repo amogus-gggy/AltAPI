@@ -139,8 +139,8 @@ class AltAPI:
         self._registered_routes: List[Dict[str, Any]] = []
         self._openapi_routes_registered = False
 
-        # Register OpenAPI routes immediately — all routes are known at this point
-        # (decorators register them before __init__ completes)
+        # Mount /openapi.json and /docs only; HTTP routes are added to the spec in
+        # route() after @app.get etc. run (decorators execute after AltAPI.__init__).
         if self._openapi_url or self._docs_url:
             self._register_openapi_routes()
 
@@ -192,6 +192,7 @@ class AltAPI:
                     "method": m.upper(),
                     "handler": func,
                 })
+                self._add_route_to_openapi(path, m.upper(), func)
 
             # Register for caching if @cache decorator was applied
             # Check the function itself first, then unwrap to find _cache_expires
@@ -325,6 +326,8 @@ class AltAPI:
         """
         self._openapi_url = openapi_url
         self._docs_url = docs_url
+        if (self._openapi_url or self._docs_url) and not self._openapi_routes_registered:
+            self._register_openapi_routes()
 
     def cache(self, path: str, expires: int = 300):
         """
@@ -350,6 +353,10 @@ class AltAPI:
             # Add route as usual
             for m in ["GET"]:
                 self._router.add_route(path, m.upper(), func)
+                self._registered_routes.append(
+                    {"path": path, "method": m.upper(), "handler": func}
+                )
+                self._add_route_to_openapi(path, m.upper(), func)
             return func
 
         return decorator
@@ -476,43 +483,11 @@ class AltAPI:
         
         from altapi.http.responses import JSONResponse, HTMLResponse
         from altapi.swagger import get_swagger_ui_html
-        
-        # Build OpenAPI specification from registered routes
-        for route_info in self._registered_routes:
-            handler = route_info["handler"]
-            path = route_info["path"]
-            method = route_info["method"]
-            
-            # Extract OpenAPI metadata from handler
-            summary = None
-            description = None
-            tags = None
-            request_body = None
-            responses = None
-            deprecated = False
-            
-            if hasattr(handler, "_openapi_metadata"):
-                meta = handler._openapi_metadata
-                summary = meta.get("summary")
-                description = meta.get("description")
-                tags = meta.get("tags")
-                request_body = meta.get("request_body")
-                responses = meta.get("responses")
-                deprecated = meta.get("deprecated", False)
-            
-            # Add route to OpenAPI generator
-            self._openapi_generator.add_route(
-                path=path,
-                method=method,
-                handler=handler,
-                summary=summary,
-                description=description,
-                tags=tags,
-                request_body=request_body,
-                responses=responses,
-                deprecated=deprecated,
-            )
-        
+
+        # HTTP routes are added to the generator incrementally in route() via
+        # _add_route_to_openapi — __init__ runs before @app.get decorators, so we
+        # must not rely on building the spec from _registered_routes only here.
+
         # Register OpenAPI JSON endpoint directly to router (not via decorator to avoid _registered_routes pollution)
         if self._openapi_url:
             generator = self._openapi_generator
@@ -634,6 +609,44 @@ class AltAPI:
         finally:
             # Cleanup generator-based dependencies
             await injector.cleanup()
+
+    def _collect_openapi_metadata(self, handler):
+        """Walk handler wrappers (e.g. @cache) and take innermost OpenAPI metadata."""
+        meta = None
+        h = handler
+        while h is not None:
+            if hasattr(h, "_openapi_metadata"):
+                meta = h._openapi_metadata
+            h = getattr(h, "__wrapped__", None)
+        if not meta:
+            return None, None, None, None, None, False
+        return (
+            meta.get("summary"),
+            meta.get("description"),
+            meta.get("tags"),
+            meta.get("request_body"),
+            meta.get("responses"),
+            meta.get("deprecated", False),
+        )
+
+    def _add_route_to_openapi(self, path: str, method: str, handler) -> None:
+        """Register a single HTTP route with the OpenAPI generator (call from route())."""
+        summary, description, tags, request_body, responses, deprecated = (
+            self._collect_openapi_metadata(handler)
+            if handler is not None
+            else (None, None, None, None, None, False)
+        )
+        self._openapi_generator.add_route(
+            path=path,
+            method=method,
+            handler=handler,
+            summary=summary,
+            description=description,
+            tags=tags,
+            request_body=request_body,
+            responses=responses,
+            deprecated=deprecated,
+        )
 
     async def _handle_ws(self, scope, receive, send):
         path = scope.get("path", "/")
