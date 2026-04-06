@@ -139,15 +139,16 @@ class AltAPI:
         self._registered_routes: List[Dict[str, Any]] = []
         self._openapi_routes_registered = False
 
+        # Register OpenAPI routes immediately — all routes are known at this point
+        # (decorators register them before __init__ completes)
+        if self._openapi_url or self._docs_url:
+            self._register_openapi_routes()
+
     async def _init_shared_resources(self):
         """Initialize shared resources (called in lifespan)."""
         # Initialize per-worker in-memory cache backend (fast, no IPC)
         self._cache_backend = InMemoryCache()
         CacheManager.set_default_backend(self._cache_backend)
-        
-        # Register OpenAPI routes for this worker
-        if self._openapi_url or self._docs_url:
-            self._register_openapi_routes()
 
         # Rebuild app with middlewares and register cache routes
         if not self._app_built:

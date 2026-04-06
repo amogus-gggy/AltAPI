@@ -3,23 +3,22 @@ OpenAPI decorators for AltAPI.
 
 Decorators for adding OpenAPI metadata to route handlers.
 """
-import asyncio
-from functools import wraps
 from typing import Any, Dict, List, Optional
 
 
-def _make_async_aware(func):
-    """Create async-aware wrapper for a function."""
-    if asyncio.iscoroutinefunction(func):
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-        return async_wrapper
-    else:
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-        return sync_wrapper
+def _merge_openapi_metadata(func, metadata: Dict[str, Any]) -> Any:
+    """
+    Merge OpenAPI metadata into function, preserving existing metadata.
+
+    Returns the same function object (no wrapper created).
+    """
+    existing = getattr(func, '_openapi_metadata', {})
+    merged = {**existing, **metadata}
+    # Remove None values
+    merged = {k: v for k, v in merged.items() if v is not None}
+    func._openapi_metadata = merged
+    func._openapi_decorated = True
+    return func
 
 
 def openapi(
@@ -32,7 +31,7 @@ def openapi(
 ):
     """
     Decorator to add OpenAPI metadata to a route handler.
-    
+
     Args:
         summary: Short summary of the operation
         description: Detailed description of the operation
@@ -40,10 +39,10 @@ def openapi(
         request_body: Request body schema (OpenAPI 3.0 format)
         responses: Response schemas (OpenAPI 3.0 format)
         deprecated: Mark operation as deprecated
-        
+
     Returns:
         Decorator function
-        
+
     Example:
         @app.get("/api/users/{id:int}")
         @openapi(
@@ -73,9 +72,6 @@ def openapi(
             return JSONResponse({"id": user_id, "name": f"User {user_id}"})
     """
     def decorator(func):
-        wrapper = _make_async_aware(func)
-
-        # Store OpenAPI metadata on the function
         metadata = {
             "summary": summary,
             "description": description,
@@ -84,14 +80,7 @@ def openapi(
             "responses": responses,
             "deprecated": deprecated,
         }
-
-        # Remove None values
-        metadata = {k: v for k, v in metadata.items() if v is not None}
-
-        wrapper._openapi_metadata = metadata
-        wrapper._openapi_decorated = True
-
-        return wrapper
+        return _merge_openapi_metadata(func, metadata)
 
     return decorator
 
@@ -113,9 +102,7 @@ def tag(*tag_names: str):
             return JSONResponse({"users": []})
     """
     def decorator(func):
-        wrapper = _make_async_aware(func)
-        wrapper._openapi_metadata = {"tags": list(tag_names)}
-        return wrapper
+        return _merge_openapi_metadata(func, {"tags": list(tag_names)})
 
     return decorator
 
@@ -136,14 +123,7 @@ def deprecated(func):
         async def old_endpoint(request):
             return JSONResponse({"message": "Use /api/new-endpoint instead"})
     """
-    wrapper = _make_async_aware(func)
-
-    if not hasattr(wrapper, '_openapi_metadata'):
-        wrapper._openapi_metadata = {}
-
-    wrapper._openapi_metadata['deprecated'] = True
-
-    return wrapper
+    return _merge_openapi_metadata(func, {"deprecated": True})
 
 
 def describe_responses(responses: Dict[str, Any]):
@@ -173,14 +153,7 @@ def describe_responses(responses: Dict[str, Any]):
             ...
     """
     def decorator(func):
-        wrapper = _make_async_aware(func)
-
-        if not hasattr(wrapper, '_openapi_metadata'):
-            wrapper._openapi_metadata = {}
-
-        wrapper._openapi_metadata['responses'] = responses
-
-        return wrapper
+        return _merge_openapi_metadata(func, {"responses": responses})
 
     return decorator
 
@@ -217,17 +190,13 @@ def describe_request_body(body_schema: Dict[str, Any], description: str = "Reque
             return JSONResponse({"id": 1, **data})
     """
     def decorator(func):
-        wrapper = _make_async_aware(func)
-
-        if not hasattr(wrapper, '_openapi_metadata'):
-            wrapper._openapi_metadata = {}
-
-        wrapper._openapi_metadata['request_body'] = {
-            "description": description,
-            "content": body_schema.get("content", {"application/json": {"schema": body_schema}}),
-            "required": body_schema.get("required", True),
+        metadata = {
+            "request_body": {
+                "description": description,
+                "content": body_schema.get("content", {"application/json": {"schema": body_schema}}),
+                "required": body_schema.get("required", True),
+            }
         }
-
-        return wrapper
+        return _merge_openapi_metadata(func, metadata)
 
     return decorator

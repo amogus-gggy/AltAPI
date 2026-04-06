@@ -7,6 +7,8 @@ import inspect
 import re
 from typing import Any, Dict, List, Optional
 
+from .depends import Depends
+
 
 # Type mapping for path parameters
 PATH_PARAM_TYPES = {
@@ -132,6 +134,7 @@ class OpenAPIGenerator:
         
         # Store routes manually
         self._routes: List[Dict[str, Any]] = []
+        self._cached_schema: Optional[Dict[str, Any]] = None
     
     def add_route(
         self,
@@ -170,14 +173,18 @@ class OpenAPIGenerator:
             "responses": responses,
             "deprecated": deprecated,
         })
+        # Invalidate cache when new routes are added
+        self._cached_schema = None
     
     def generate(self) -> Dict[str, Any]:
         """
         Generate OpenAPI 3.0 specification.
-        
+
         Returns:
-            OpenAPI specification as dictionary
+            OpenAPI specification as dictionary (cached)
         """
+        if self._cached_schema is not None:
+            return self._cached_schema
         spec: Dict[str, Any] = {
             "openapi": "3.0.3",
             "info": {
@@ -253,7 +260,8 @@ class OpenAPIGenerator:
                 operation["deprecated"] = True
             
             spec["paths"][openapi_path][method] = operation
-        
+
+        self._cached_schema = spec
         return spec
     
     def _extract_query_params(self, handler) -> List[Dict[str, Any]]:
@@ -273,6 +281,10 @@ class OpenAPIGenerator:
             for name, param in sig.parameters.items():
                 # Skip 'request' parameter
                 if name == "request":
+                    continue
+
+                # Skip Depends parameters — they are DI, not query params
+                if isinstance(param.default, Depends):
                     continue
                 
                 # Check if parameter has type annotation
