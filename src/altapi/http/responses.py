@@ -1,4 +1,4 @@
-import ujson
+import orjson
 import os
 from typing import Dict, List, Optional, Union, AsyncIterator, Callable
 
@@ -27,6 +27,8 @@ class _HeadersMixin:
 
 
 class Response(_HeadersMixin):
+    __slots__ = ('status_code', 'headers', 'media_type', '_encoded_headers', '_encoded_body', 'content')
+
     def __init__(self, content="", status_code=200, headers=None, media_type="text/plain"):
         self.content = content
         self.status_code = status_code
@@ -50,7 +52,7 @@ class Response(_HeadersMixin):
 
         await send({
             "type": "http.response.body",
-            "body": self._get_encoded_body(),
+            "body": self._encoded_body,
             "more_body": False,  # CRITICAL for ASGI
         })
 
@@ -59,23 +61,17 @@ class Response(_HeadersMixin):
             self._encoded_headers = self._encode_headers(self.media_type, self.headers)
         return self._encoded_headers
 
-    def _get_encoded_body(self):
-        if self._encoded_body is None:
-            self._encoded_body = self.content.encode('utf-8') if isinstance(self.content, str) else self.content
-        return self._encoded_body
-
 
 class JSONResponse(Response):
     def __init__(self, content, status_code=200, headers=None):
-        # Serialize to JSON and immediately encode to bytes (JSON is always ASCII-safe)
-        json_bytes = ujson.dumps(content).encode('latin-1')
+        # orjson.dumps returns bytes directly — no encoding needed
+        json_bytes = orjson.dumps(content)
         super().__init__(
             json_bytes,
             status_code=status_code,
             headers=headers,
             media_type="application/json",
         )
-        # _encoded_body is already set in superclass
 
 
 class HTMLResponse(Response):

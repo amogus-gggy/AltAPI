@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Home - MyProject{% endblock %}
+
+{% block header %}MyProject{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="hero">
+        <h1>Welcome to MyProject</h1>
+        <p>A full-featured AltAPI application with templates, static files, and modular routing.</p>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <h3>🚀 Fast</h3>
+            <p>Built on uvicorn with optimized Cython router.</p>
+        </div>
+        <div class="feature-card">
+            <h3>📦 Modular</h3>
+            <p>Organize routes in separate modules with <code>register_routes(app)</code>.</p>
+        </div>
+        <div class="feature-card">
+            <h3>🎨 Templates</h3>
+            <p>Jinja2 templating with inheritance and blocks.</p>
+        </div>
+        <div class="feature-card">
+            <h3>💾 Caching</h3>
+            <p>Built-in per-worker in-memory caching.</p>
+        </div>
+        <div class="feature-card">
+            <h3>🔌 WebSocket</h3>
+            <p>Full WebSocket support out of the box.</p>
+        </div>
+        <div class="feature-card">
+            <h3>📖 OpenAPI</h3>
+            <p>Auto-generated OpenAPI spec with SwaggerUI docs.</p>
+        </div>
+        <div class="feature-card">
+            <h3>🔧 Middleware</h3>
+            <p>ASGI-compatible middleware system.</p>
+        </div>
+    </div>
+
+    <div class="getting-started">
+        <h2>Getting Started</h2>
+        <p>Edit <code>templates/index.html</code> to customize this page.</p>
+        <p>Check <code>routes/</code> directory for API and page routes.</p>
+    </div>
+
+    <div class="api-links">
+        <a href="/docs" class="api-link">📖 SwaggerUI Docs</a>
+        <a href="/openapi.json" class="api-link">📄 OpenAPI JSON</a>
+        <a href="/api/health" class="api-link">GET /api/health</a>
+        <a href="/api/version" class="api-link">GET /api/version</a>
+        <a href="/about" class="api-link">GET /about</a>
+    </div>
+</div>
+{% endblock %}

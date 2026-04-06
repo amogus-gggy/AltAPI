@@ -89,31 +89,36 @@ def rate_limit(
     storage = _get_storage()
 
     def decorator(func: Callable) -> Callable:
+        # Pre-compute at decorator time (performance optimization)
+        is_async = asyncio.iscoroutinefunction(func)
+        has_skip = skip_when is not None
+        has_custom_key = key_func is not None
+
         @wraps(func)
         async def wrapper(request, *args, **kwargs):
             # Check if should skip
-            if skip_when is not None:
+            if has_skip:
                 result = skip_when(request)
                 if asyncio.iscoroutine(result):
                     result = await result
                 if result:
-                    return await func(request, *args, **kwargs) if asyncio.iscoroutinefunction(func) else func(request, *args, **kwargs)
+                    return await func(request, *args, **kwargs) if is_async else func(request, *args, **kwargs)
 
             # Get rate limit key
-            if key_func is not None:
+            if has_custom_key:
                 key = key_func(request)
                 if asyncio.iscoroutine(key):
                     key = await key
             else:
-                # Default: use client IP from scope
-                client = request.scope.get("client")
+                # Default: use client IP from scope (direct access, no .get())
+                client = request.scope["client"]
                 key = client[0] if client else "unknown"
 
             # Add function name to key for uniqueness
             key = f"{func.__module__}:{func.__name__}:{key}"
 
-            # Check rate limit
-            result = await storage.check_rate_limit(key, limit, period)
+            # Atomic check + increment (single operation, half the overhead)
+            result = await storage.check_and_increment(key, limit, period)
 
             if not result.allowed:
                 # Rate limit exceeded
@@ -131,11 +136,8 @@ def rate_limit(
                 response.headers["Retry-After"] = str(int(result.reset - time.time()))
                 return response
 
-            # Increment counter
-            await storage.increment(key, period)
-
-            # Call handler
-            if asyncio.iscoroutinefunction(func):
+            # Call handler (pre-computed is_async)
+            if is_async:
                 response = await func(request, *args, **kwargs)
             else:
                 response = func(request, *args, **kwargs)
@@ -145,7 +147,7 @@ def rate_limit(
             # Add rate limit headers to response
             if hasattr(response, "headers"):
                 response.headers["X-RateLimit-Limit"] = str(result.limit)
-                response.headers["X-RateLimit-Remaining"] = str(result.remaining - 1)
+                response.headers["X-RateLimit-Remaining"] = str(result.remaining)
                 response.headers["X-RateLimit-Reset"] = str(int(result.reset))
 
             return response
@@ -182,16 +184,20 @@ def rate_limit_batch(
     storage = _get_storage()
 
     def decorator(func: Callable) -> Callable:
+        # Pre-compute at decorator time (performance optimization)
+        is_async = asyncio.iscoroutinefunction(func)
+        has_custom_key = key_func is not None
+
         @wraps(func)
         async def wrapper(request, *args, **kwargs):
             # Get rate limit key
-            if key_func is not None:
+            if has_custom_key:
                 key = key_func(request)
                 if asyncio.iscoroutine(key):
                     key = await key
             else:
-                # Default: use client IP from scope
-                client = request.scope.get("client")
+                # Default: use client IP from scope (direct access, no .get())
+                client = request.scope["client"]
                 key = client[0] if client else "unknown"
 
             key = f"{func.__module__}:{func.__name__}:{key}"
@@ -231,8 +237,8 @@ def rate_limit_batch(
             for limit, period in limits:
                 await storage.increment(key, period)
 
-            # Call handler
-            if asyncio.iscoroutinefunction(func):
+            # Call handler (pre-computed is_async)
+            if is_async:
                 response = await func(request, *args, **kwargs)
             else:
                 response = func(request, *args, **kwargs)

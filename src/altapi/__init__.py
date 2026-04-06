@@ -38,6 +38,15 @@ from .ratelimit import (
     RateLimitResult as _RateLimitResult,
 )
 from .depends import Depends as _Depends
+from .openapi_spec import OpenAPIGenerator as _OpenAPIGenerator
+from .openapi_decorators import (
+    openapi as _openapi,
+    tag as _tag,
+    deprecated as _deprecated,
+    describe_responses as _describe_responses,
+    describe_request_body as _describe_request_body,
+)
+from .swagger import SwaggerUI as _SwaggerUI, get_swagger_ui_html as _get_swagger_ui_html
 
 
 # Mapping of attribute names to their correct import paths and actual objects
@@ -72,6 +81,14 @@ _IMPORT_MAPPING = {
     "SharedMemoryRateLimitStorage": ("altapi.ratelimit", _SharedMemoryRateLimitStorage),
     "RateLimitResult": ("altapi.ratelimit", _RateLimitResult),
     "Depends": ("altapi.depends", _Depends),
+    "OpenAPIGenerator": ("altapi.openapi_spec", _OpenAPIGenerator),
+    "openapi": ("altapi.openapi_decorators", _openapi),
+    "tag": ("altapi.openapi_decorators", _tag),
+    "deprecated": ("altapi.openapi_decorators", _deprecated),
+    "describe_responses": ("altapi.openapi_decorators", _describe_responses),
+    "describe_request_body": ("altapi.openapi_decorators", _describe_request_body),
+    "SwaggerUI": ("altapi.swagger", _SwaggerUI),
+    "get_swagger_ui_html": ("altapi.swagger", _get_swagger_ui_html),
 }
 
 
@@ -124,4 +141,12 @@ __all__ = [
     "SharedMemoryRateLimitStorage",
     "RateLimitResult",
     "Depends",
+    "OpenAPIGenerator",
+    "openapi",
+    "tag",
+    "deprecated",
+    "describe_responses",
+    "describe_request_body",
+    "SwaggerUI",
+    "get_swagger_ui_html",
 ]

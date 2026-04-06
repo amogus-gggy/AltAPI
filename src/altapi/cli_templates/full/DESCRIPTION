@@ -1,0 +1,11 @@
+A full-featured AltAPI application with OpenAPI/SwaggerUI documentation.
+
+Features:
+- OpenAPI 3.0 auto-generated specification
+- SwaggerUI interactive documentation
+- Jinja2 templates with inheritance
+- Static file serving
+- Modular routing with register_routes(app)
+- Per-worker in-memory caching
+- WebSocket support
+- ASGI middleware system

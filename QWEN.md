@@ -24,7 +24,7 @@
   - `uvicorn[standard] >= 0.30.0` - ASGI server
   - `anyio >= 4.0.0` - Async I/O
   - `jinja2 >= 3.0.0` - Template engine
-  - `ujson` - Fast JSON serialization
+  - `orjson` - Fast JSON serialization
   - `Cython >= 3.0.0` - Router optimization
 
 ### Project Structure

@@ -46,7 +46,7 @@ setup(
         "uvicorn[standard]>=0.30.0",
         "anyio>=4.0.0",
         "jinja2>=3.0.0",
-        "ujson",
+        "orjson",
         "cython>=3.0.0",
     ],
 )

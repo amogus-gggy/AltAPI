@@ -10,6 +10,13 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 
 ## Changelog
 
+### v2.0.0
+- Added **OpenAPI** and **SwaggerUI** integration.
+- Added CLI
+- Internal optimizations
+- Migrated from ujson to orjson
+- Full test coverage
+
 ### v1.4.0
 - Added **Dependency Injection** system with automatic cleanup:
   - Generator-based dependencies with `yield` for resource management
@@ -27,10 +34,7 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 - Fixed cleanup guarantees — `finally` blocks now always execute even on handler errors
 - RedirectResponse returning 303 code, instead of 307
 
-### v1.3.0
-- Added rate limiting with `@rate_limit` and `@rate_limit_batch` decorators
-- Added shared manager for multi-worker rate limiting support
-- Added support for all HTTP methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT
+
 
 
 
@@ -45,7 +49,7 @@ pip install altapi
 - uvicorn >= 0.30.0
 - anyio >= 4.0.0
 - jinja2 >= 3.0.0
-- ujson
+- orjson
 - Cython >= 3.0.0
 
 ## Quick Start

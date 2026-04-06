@@ -15,6 +15,8 @@ from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, cache as cache_decorator, CacheBackend, InMemoryCache
 from .depends import Depends, DependencyInjector, get_dependencies_from_signature, cleanup_dependencies
+from .openapi_spec import OpenAPIGenerator
+from .swagger import SwaggerUI
 # Rate limiting now uses shared memory - no network overhead
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
@@ -58,6 +60,13 @@ class AltAPI:
         templates_directory: Union[str, os.PathLike] = "templates",
         static_directory: Optional[Union[str, os.PathLike]] = None,
         cache_timeout: int = 300,
+        # OpenAPI/Swagger settings
+        enable_openapi: bool = True,
+        openapi_url: Optional[str] = "/openapi.json",
+        docs_url: Optional[str] = "/docs",
+        title: str = "AltAPI",
+        version: str = "0.1.0",
+        description: str = "",
     ):
         """
         Initialize AltAPI application.
@@ -67,6 +76,12 @@ class AltAPI:
             templates_directory: Directory with Jinja2 templates
             static_directory: Directory with static files (optional)
             cache_timeout: Default cache lifetime in seconds
+            enable_openapi: Enable OpenAPI/SwaggerUI (set False for production)
+            openapi_url: URL for OpenAPI JSON specification (None to disable)
+            docs_url: URL for SwaggerUI documentation (None to disable)
+            title: API title for OpenAPI spec
+            version: API version for OpenAPI spec
+            description: API description for OpenAPI spec
         """
         self._router = Router()
         self._middlewares = middleware or []
@@ -102,8 +117,32 @@ class AltAPI:
         self._cache_backend: Optional[InMemoryCache] = None
         self._cache_timeout = cache_timeout
         self._cache_middleware: Optional[CacheMiddleware] = None
-        # Add CacheMiddleware to list (will be initialized in lifespan with InMemoryCache)
-        self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=cache_timeout))
+        # CacheMiddleware is NOT added by default - only added when @cache routes are registered
+        self._cache_middleware_needed = False
+
+        # Initialize OpenAPI generator
+        self._openapi_generator = OpenAPIGenerator(
+            title=title,
+            version=version,
+            description=description,
+        )
+        
+        # Handle OpenAPI settings
+        if not enable_openapi:
+            self._openapi_url = None
+            self._docs_url = None
+        else:
+            self._openapi_url = openapi_url
+            self._docs_url = docs_url
+        
+        # Store route metadata for OpenAPI generation
+        self._registered_routes: List[Dict[str, Any]] = []
+        self._openapi_routes_registered = False
+
+        # Mount /openapi.json and /docs only; HTTP routes are added to the spec in
+        # route() after @app.get etc. run (decorators execute after AltAPI.__init__).
+        if self._openapi_url or self._docs_url:
+            self._register_openapi_routes()
 
     async def _init_shared_resources(self):
         """Initialize shared resources (called in lifespan)."""
@@ -145,8 +184,31 @@ class AltAPI:
         methods = methods or ["GET"]
 
         def decorator(func):
+            # Pre-compute handler metadata at registration time (performance optimization)
+            sig = inspect.signature(func)
+            is_async = inspect.iscoroutinefunction(func)
+            depends_map = get_dependencies_from_signature(sig)
+            handler_params = list(sig.parameters.keys())
+            has_request = 'request' in handler_params
+
+            # Store metadata on the function for fast access during requests
+            func._handler_meta = {
+                'sig': sig,
+                'is_async': is_async,
+                'depends_map': depends_map,
+                'handler_params': handler_params,
+                'has_request': has_request,
+            }
+
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
+                # Register route for OpenAPI
+                self._registered_routes.append({
+                    "path": path,
+                    "method": m.upper(),
+                    "handler": func,
+                })
+                self._add_route_to_openapi(path, m.upper(), func)
 
             # Register for caching if @cache decorator was applied
             # Check the function itself first, then unwrap to find _cache_expires
@@ -167,6 +229,10 @@ class AltAPI:
                 if not hasattr(self, "_cache_routes"):
                     self._cache_routes = []
                 self._cache_routes.append((path, cache_expires))
+                # Only add CacheMiddleware when we actually have cached routes
+                if not self._cache_middleware_needed:
+                    self._cache_middleware_needed = True
+                    self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=self._cache_timeout))
 
             return func
 
@@ -265,6 +331,23 @@ class AltAPI:
             return func
 
         return decorator
+    
+    def enable_openapi(
+        self,
+        openapi_url: Optional[str] = "/openapi.json",
+        docs_url: Optional[str] = "/docs",
+    ):
+        """
+        Enable OpenAPI specification and SwaggerUI documentation.
+        
+        Args:
+            openapi_url: URL for OpenAPI JSON specification (None to disable)
+            docs_url: URL for SwaggerUI documentation (None to disable)
+        """
+        self._openapi_url = openapi_url
+        self._docs_url = docs_url
+        if (self._openapi_url or self._docs_url) and not self._openapi_routes_registered:
+            self._register_openapi_routes()
 
     def cache(self, path: str, expires: int = 300):
         """
@@ -285,11 +368,19 @@ class AltAPI:
         if not hasattr(self, "_cache_routes"):
             self._cache_routes = []
         self._cache_routes.append((path, expires))
+        # Enable CacheMiddleware
+        if not self._cache_middleware_needed:
+            self._cache_middleware_needed = True
+            self._middlewares.append(Middleware(CacheMiddleware, cache_timeout=self._cache_timeout))
 
         def decorator(func):
             # Add route as usual
             for m in ["GET"]:
                 self._router.add_route(path, m.upper(), func)
+                self._registered_routes.append(
+                    {"path": path, "method": m.upper(), "handler": func}
+                )
+                self._add_route_to_openapi(path, m.upper(), func)
             return func
 
         return decorator
@@ -390,7 +481,7 @@ class AltAPI:
     def _build_middlewares(self, app: ASGIApp) -> ASGIApp:
         # Register cache routes before building middlewares
         cache_middleware_instance = None
-        
+
         for mw in reversed(self._middlewares):
             built = mw.build(app)
             # Save cache middleware instance for later registration
@@ -404,10 +495,51 @@ class AltAPI:
                 cache_middleware_instance.register_handler(path, expires)
 
         return app
+    
+    def _register_openapi_routes(self):
+        """
+        Register OpenAPI specification and SwaggerUI routes directly to router.
+        """
+        # Prevent double registration
+        if self._openapi_routes_registered:
+            return
+        self._openapi_routes_registered = True
+        
+        from altapi.http.responses import JSONResponse, HTMLResponse
+        from altapi.swagger import get_swagger_ui_html
+
+        # HTTP routes are added to the generator incrementally in route() via
+        # _add_route_to_openapi — __init__ runs before @app.get decorators, so we
+        # must not rely on building the spec from _registered_routes only here.
+
+        # Register OpenAPI JSON endpoint directly to router (not via decorator to avoid _registered_routes pollution)
+        if self._openapi_url:
+            generator = self._openapi_generator
+            openapi_url = self._openapi_url
+            
+            async def openapi_json_handler(request):
+                spec = generator.generate()
+                return JSONResponse(spec)
+            
+            self._router.add_route(openapi_url, "GET", openapi_json_handler)
+        
+        # Register SwaggerUI endpoint directly to router
+        if self._docs_url:
+            openapi_url = self._openapi_url
+            generator = self._openapi_generator
+            
+            async def swagger_ui_handler(request):
+                html = get_swagger_ui_html(
+                    openapi_url=openapi_url,
+                    title=f"{generator.title} - Swagger UI",
+                )
+                return HTMLResponse(html)
+            
+            self._router.add_route(self._docs_url, "GET", swagger_ui_handler)
 
     async def _handle_http(self, scope, receive, send):
-        path = scope.get("path", "/")
-        method = scope.get("method", "GET")
+        path = scope["path"]
+        method = scope["method"]
 
         # Check mounted applications
         for mount_path, mounted_app in self._mounted_apps.items():
@@ -439,13 +571,37 @@ class AltAPI:
         if not handler:
             return await HTMLResponse(DEFAULT_404_BODY, 404)(scope, receive, send)
 
+        # Use pre-computed handler metadata (performance optimization)
+        handler_meta = getattr(handler, '_handler_meta', None)
+        if handler_meta is None:
+            # Fallback for handlers registered without decorator
+            sig = inspect.signature(handler)
+            is_async = inspect.iscoroutinefunction(handler)
+            depends_map = get_dependencies_from_signature(sig)
+            handler_params = list(sig.parameters.keys())
+            has_request = 'request' in handler_params
+        else:
+            sig = handler_meta['sig']
+            is_async = handler_meta['is_async']
+            depends_map = handler_meta['depends_map']
+            handler_params = handler_meta['handler_params']
+            has_request = handler_meta['has_request']
+
         request = Request(scope, receive, params)
 
-        # Extract dependencies from handler signature
-        sig = inspect.signature(handler)
-        depends_map = get_dependencies_from_signature(sig)
+        # Fast path: no dependencies (most common case) - no try/finally overhead
+        if not depends_map:
+            if is_async:
+                response = await handler(request)
+            else:
+                response = await asyncio.get_running_loop().run_in_executor(
+                    self._sync_executor,
+                    handler,
+                    request,
+                )
+            return await response(scope, receive, send)
 
-        # Create dependency injector for this request
+        # Slow path: with dependencies
         injector = DependencyInjector(request=request)
 
         try:
@@ -455,46 +611,33 @@ class AltAPI:
                 solved_values[param_name] = await injector.solve(depends.dependency)
 
             # Call handler with solved dependencies
-            if depends_map:
-                # Merge solved dependencies with request and path_params
-                call_kwargs = {**solved_values}
-                
-                # Add path_params to kwargs only if not already provided by DI
-                handler_params = list(sig.parameters.keys())
-                for param_name in handler_params:
-                    if param_name == 'request':
-                        continue
-                    # Skip if already in solved_values (from DI)
-                    if param_name not in call_kwargs and param_name in params:
-                        call_kwargs[param_name] = params[param_name]
-                
-                # Check if handler expects 'request' as first argument
-                if 'request' in handler_params:
-                    call_args = (request,)
-                else:
-                    call_args = ()
-                
-                if inspect.iscoroutinefunction(handler):
-                    response = await handler(*call_args, **call_kwargs)
-                else:
-                    response = await asyncio.get_running_loop().run_in_executor(
-                        self._sync_executor,
-                        handler,
-                        *call_args,
-                        **call_kwargs,
-                    )
-            else:
-                # No dependencies - call as before
-                if inspect.iscoroutinefunction(handler):
-                    response = await handler(request)
-                else:
-                    response = await asyncio.get_running_loop().run_in_executor(
-                        self._sync_executor,
-                        handler,
-                        request,
-                    )
+            call_kwargs = {**solved_values}
 
-            await response(scope, receive, send)
+            # Add path_params to kwargs only if not already provided by DI
+            for param_name in handler_params:
+                if param_name == 'request':
+                    continue
+                # Skip if already in solved_values (from DI)
+                if param_name not in call_kwargs and param_name in params:
+                    call_kwargs[param_name] = params[param_name]
+
+            # Check if handler expects 'request' as first argument
+            if has_request:
+                call_args = (request,)
+            else:
+                call_args = ()
+
+            if is_async:
+                response = await handler(*call_args, **call_kwargs)
+            else:
+                response = await asyncio.get_running_loop().run_in_executor(
+                    self._sync_executor,
+                    handler,
+                    *call_args,
+                    **call_kwargs,
+                )
+
+            return await response(scope, receive, send)
         except Exception as e:
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
             raise
@@ -502,8 +645,46 @@ class AltAPI:
             # Cleanup generator-based dependencies
             await injector.cleanup()
 
+    def _collect_openapi_metadata(self, handler):
+        """Walk handler wrappers (e.g. @cache) and take innermost OpenAPI metadata."""
+        meta = None
+        h = handler
+        while h is not None:
+            if hasattr(h, "_openapi_metadata"):
+                meta = h._openapi_metadata
+            h = getattr(h, "__wrapped__", None)
+        if not meta:
+            return None, None, None, None, None, False
+        return (
+            meta.get("summary"),
+            meta.get("description"),
+            meta.get("tags"),
+            meta.get("request_body"),
+            meta.get("responses"),
+            meta.get("deprecated", False),
+        )
+
+    def _add_route_to_openapi(self, path: str, method: str, handler) -> None:
+        """Register a single HTTP route with the OpenAPI generator (call from route())."""
+        summary, description, tags, request_body, responses, deprecated = (
+            self._collect_openapi_metadata(handler)
+            if handler is not None
+            else (None, None, None, None, None, False)
+        )
+        self._openapi_generator.add_route(
+            path=path,
+            method=method,
+            handler=handler,
+            summary=summary,
+            description=description,
+            tags=tags,
+            request_body=request_body,
+            responses=responses,
+            deprecated=deprecated,
+        )
+
     async def _handle_ws(self, scope, receive, send):
-        path = scope.get("path", "/")
+        path = scope["path"]
 
         handler, params = self._router.find_websocket_handler(path)
         websocket = WebSocket(scope, receive, send, params)

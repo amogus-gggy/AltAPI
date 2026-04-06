@@ -201,13 +201,15 @@ def cache(
         func._cache_key_prefix = key_prefix
         func._cache_backend = backend
 
+        # Pre-compute at decorator time (performance optimization)
+        is_async = asyncio.iscoroutinefunction(func)
+
         @wraps(func)
         async def wrapper(request, *args, **kwargs):
             # Just call the handler - caching is handled by CacheMiddleware
-            result = func(request, *args, **kwargs)
-            if asyncio.iscoroutine(result):
-                result = await result
-            return result
+            if is_async:
+                return await func(request, *args, **kwargs)
+            return func(request, *args, **kwargs)
 
         # Preserve metadata
         wrapper._cache_expires = expires
@@ -257,29 +259,22 @@ class CacheMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        path = scope.get("path", "/")
-        method = scope.get("method", "GET")
+        path = scope["path"]
+        method = scope["method"]
 
-        # Only cache GET
+        # Only cache GET requests
         if method != "GET":
             return await self.app(scope, receive, send)
 
-        # Check if path should be cached
+        # Fast path: check exact match in cached_handlers (most common case)
         cached_handlers = self._cached_handlers
         expires = cached_handlers.get(path)
 
         if expires is None:
-            # Pattern matching (slower)
-            for handler_path, handler_expires in cached_handlers.items():
-                if self._match_path(path, handler_path):
-                    expires = handler_expires
-                    break
-
-        if expires is None:
-            # Not cached - FAST PASSTHROUGH
+            # Not cached - FAST PASSTHROUGH (no dict iteration, no pattern matching)
             return await self.app(scope, receive, send)
 
-        # Generate cache key
+        # Generate cache key (only for cached routes)
         query_string = scope.get("query_string", b"")
         cache_key = f"http:{path}:{query_string.decode()}" if query_string else f"http:{path}:"
 

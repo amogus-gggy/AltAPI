@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <html>
-<head><title>Test</title></head>
-<body><h1>{{ title|default("Test Page") }}</h1></body>
+<head>
+    <title>Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; }
+        a { color: #667eea; }
+    </style>
+</head>
+<body>
+    <h1>{{ title|default("Test Page") }}</h1>
+    <p><a href="/">🏠 Home</a> | <a href="/docs">📖 API Docs</a></p>
+</body>
 </html>
