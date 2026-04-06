@@ -13,20 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref || github.ref_name }}
+      
       
       - name: Install Ruff
         uses: astral-sh/ruff-action@v3
+        with:
+          version: "latest"
       
-      - name: Run Ruff check with fixes
+      
+      - name: Run Ruff check --fix
         run: ruff check --fix .
-        
+      
+      
       - name: Run Ruff format
         run: ruff format .
+      
       
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Apply Ruff fixes"
+          commit_message: "style: apply Ruff fixes"
           file_pattern: "*.py *.pyi"
         if: github.event_name == 'push'
