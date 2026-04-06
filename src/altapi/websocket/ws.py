@@ -1,4 +1,4 @@
-import json
+import orjson
 from enum import Enum
 from typing import Dict, Callable, Any, Optional, Iterable
 
@@ -136,7 +136,8 @@ class WebSocket:
         """Send JSON data over the WebSocket."""
         if self._state == WebSocketState.CONNECTING:
             await self.accept()
-        await self.send_text(json.dumps(data))
+        # orjson.dumps returns bytes, so send_bytes is more efficient
+        await self.send_bytes(orjson.dumps(data))
 
     async def receive_text(self) -> str:
         """Receive text data from the WebSocket."""
@@ -181,7 +182,7 @@ class WebSocket:
     async def receive_json(self) -> Any:
         """Receive JSON data from the WebSocket."""
         text = await self.receive_text()
-        return json.loads(text)
+        return orjson.loads(text)
 
     async def __aiter__(self):
         """Iterate over incoming messages."""

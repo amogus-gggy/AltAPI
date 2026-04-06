@@ -18,7 +18,7 @@ app = AltAPI(
 CacheManager.set_default_backend(InMemoryCache(max_size=10000))
 
 @app.get("/json")
-@rate_limit(10000000000)
+#@rate_limit(10000000000)
 async def bench(request):
     return JSONResponse({"test":"test"})
 

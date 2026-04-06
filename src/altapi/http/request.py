@@ -1,4 +1,4 @@
-import json
+import orjson
 from urllib.parse import parse_qs
 from typing import Callable, Any, Dict, Optional
 
@@ -95,7 +95,7 @@ class Request:
 
     async def json(self):
         body = await self._get_body()
-        return json.loads(body)
+        return orjson.loads(body)
 
     async def text(self):
         body = await self._get_body()

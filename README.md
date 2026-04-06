@@ -45,7 +45,7 @@ pip install altapi
 - uvicorn >= 0.30.0
 - anyio >= 4.0.0
 - jinja2 >= 3.0.0
-- ujson
+- orjson
 - Cython >= 3.0.0
 
 ## Quick Start

@@ -76,12 +76,12 @@ async def test_rate_limit_skip_when(reset_rate_limit_storage):
         scope = {"client": ("1.2.3.4", 0), "headers": []}
 
     r = await handler(Req())
-    import ujson
+    import orjson
 
     body = r.content if isinstance(r.content, (bytes, str)) else r._encoded_body
     if isinstance(body, str):
         body = body.encode()
-    data = ujson.loads(body)
+    data = orjson.loads(body)
     assert data["skipped"] is True
 
 
