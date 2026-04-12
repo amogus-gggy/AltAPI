@@ -2,6 +2,7 @@
 OpenAPI 3.0 specification generator for AltAPI.
 
 Automatically generates OpenAPI specifications from registered routes.
+Supports Pydantic models for request/response schema generation.
 """
 
 import inspect
@@ -9,6 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .depends import Depends
+from .pydantic_schemas import is_pydantic_model, extract_pydantic_schemas
 
 
 # Type mapping for path parameters
@@ -152,6 +154,8 @@ class OpenAPIGenerator:
         request_body: Optional[Dict[str, Any]] = None,
         responses: Optional[Dict[str, Any]] = None,
         deprecated: bool = False,
+        request_model: Optional[type] = None,
+        response_model: Optional[type] = None,
     ):
         """
         Add a route to the OpenAPI specification.
@@ -166,6 +170,8 @@ class OpenAPIGenerator:
             request_body: Request body schema
             responses: Response schemas
             deprecated: Whether this endpoint is deprecated
+            request_model: Pydantic model for request body
+            response_model: Pydantic model for response body
         """
         self._routes.append(
             {
@@ -178,6 +184,8 @@ class OpenAPIGenerator:
                 "request_body": request_body,
                 "responses": responses,
                 "deprecated": deprecated,
+                "request_model": request_model,
+                "response_model": response_model,
             }
         )
         # Invalidate cache when new routes are added
@@ -192,6 +200,18 @@ class OpenAPIGenerator:
         """
         if self._cached_schema is not None:
             return self._cached_schema
+
+        # Collect all Pydantic models from routes
+        all_models = []
+        for route in self._routes:
+            if route.get("request_model") and is_pydantic_model(route["request_model"]):
+                all_models.append(route["request_model"])
+            if route.get("response_model") and is_pydantic_model(route["response_model"]):
+                all_models.append(route["response_model"])
+
+        # Extract schemas
+        schemas = extract_pydantic_schemas(all_models) if all_models else {}
+
         spec: Dict[str, Any] = {
             "openapi": "3.0.3",
             "info": {
@@ -202,6 +222,12 @@ class OpenAPIGenerator:
             "servers": self.servers,
             "paths": {},
         }
+
+        # Add components with schemas if any
+        if schemas:
+            spec["components"] = {
+                "schemas": schemas
+            }
 
         # Add contact info
         if self.contact:

@@ -1,8 +1,7 @@
 """
-Caching Example for AltAPI.
+Caching Example for AltAPI with Pydantic Integration.
 
-Caching works by default via shared manager.
-Use @cache decorator or app.cache() for caching.
+Demonstrates caching with Pydantic response models for OpenAPI schema generation.
 
 Usage:
     python examples/cache_example.py
@@ -11,28 +10,71 @@ Usage:
 import asyncio
 import time
 
+from pydantic import BaseModel, Field
+from typing import List
+
 from altapi import AltAPI
 from altapi.http import JSONResponse
 from altapi.caching import cache
 
-app = AltAPI(cache_timeout=300)  # 5 minutes by default
+
+# Pydantic models for response schemas
+class WelcomeResponse(BaseModel):
+    """Welcome response model."""
+    message: str
+    endpoints: List[str]
 
 
-@app.get("/")
+class ExpensiveOperationResponse(BaseModel):
+    """Expensive operation response model."""
+    message: str
+    timestamp: float
+    note: str
+    id: int | None = None
+
+
+class DataResponse(BaseModel):
+    """Data response model."""
+    data: List[int]
+    timestamp: float
+
+
+app = AltAPI(
+    cache_timeout=300,  # 5 minutes by default
+    title="AltAPI Caching Example",
+    version="1.0.0",
+    description="Caching example with Pydantic model integration",
+)
+
+
+@app.get(
+    "/",
+    response_model=WelcomeResponse,
+    summary="Welcome",
+    description="Welcome page with endpoint list",
+    tags=["system"],
+)
 async def home(request):
     return JSONResponse(
         {
             "message": "Welcome to AltAPI Caching Example",
             "endpoints": [
                 "/api/expensive - Expensive operation (cached for 5 minutes)",
-                "/api/data - Data with different cache times",
+                "/api/expensive/{id:int} - Expensive operation with ID",
+                "/api/data - Data with 1 minute cache",
             ],
         }
     )
 
 
-# Option 1: Using @cache decorator
-@app.get("/api/expensive")
+# Option 1: Using @cache decorator with response_model
+@app.get(
+    "/api/expensive",
+    response_model=ExpensiveOperationResponse,
+    summary="Expensive operation",
+    description="Simulates an expensive operation with cached result",
+    tags=["expensive"],
+)
 @cache(expires=300)  # Cache for 5 minutes
 async def expensive_operation(request):
     """Expensive operation, result is cached."""
@@ -47,8 +89,14 @@ async def expensive_operation(request):
     )
 
 
-# Option 1: Using @cache decorator
-@app.get("/api/expensive/{id:int}")
+# Option 2: Using @cache decorator with path parameter
+@app.get(
+    "/api/expensive/{id:int}",
+    response_model=ExpensiveOperationResponse,
+    summary="Expensive operation by ID",
+    description="Simulates an expensive operation with ID parameter and cached result",
+    tags=["expensive"],
+)
 @cache(expires=300)  # Cache for 5 minutes
 async def expensive_operation_by_id(request):
     """Expensive operation with ID parameter, result is cached."""
@@ -64,8 +112,15 @@ async def expensive_operation_by_id(request):
     )
 
 
-# Option 2: Using app.cache()
-@app.cache("/api/data", expires=60)  # Cache for 1 minute
+# Option 3: Using app.cache() with response_model
+@app.cache(
+    "/api/data",
+    expires=60,  # Cache for 1 minute
+    response_model=DataResponse,
+    summary="Cached data",
+    description="Data that updates once per minute",
+    tags=["data"],
+)
 @app.get("/api/data")
 async def get_data(request):
     """Data that updates once per minute."""

@@ -2,20 +2,27 @@ import asyncio
 import inspect
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Type
 
 from .http.responses import HTMLResponse
 
 from .router import Router
 from .websocket.ws import WebSocket
 from .http.request import Request
-from .http.responses import FileResponse
+from .http.responses import FileResponse, JSONResponse
 from .middleware.middleware import Middleware, ASGIApp
 from .templating.default_templates import DEFAULT_404_BODY, DEFAULT_500_BODY
 from .templating.templates import Jinja2Templates, set_default_templates_directory
 from .caching.cache import CacheMiddleware, CacheManager, InMemoryCache
 from .depends import DependencyInjector, get_dependencies_from_signature
 from .openapi_spec import OpenAPIGenerator
+from .pydantic_schemas import (
+    is_pydantic_model,
+    model_to_openapi_ref,
+    model_to_request_body_schema,
+    model_to_response_schema,
+    extract_pydantic_schemas,
+)
 # Rate limiting now uses shared memory - no network overhead
 
 _sync_executor = ThreadPoolExecutor(max_workers=10)
@@ -170,16 +177,47 @@ class AltAPI:
         """Return per-worker in-memory cache backend."""
         return self._cache_backend
 
-    def route(self, path, methods=None):
+    def route(
+        self,
+        path,
+        methods=None,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering HTTP routes.
 
         Args:
             path: Route path
             methods: List of HTTP methods (default ["GET"])
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
 
         Returns:
             Decorator for registering handler function
+
+        Example:
+            class UserCreate(BaseModel):
+                name: str
+                email: str
+
+            class UserResponse(BaseModel):
+                id: int
+                name: str
+                email: str
+
+            @app.post("/api/users", request_model=UserCreate, response_model=UserResponse)
+            async def create_user(request):
+                data = await request.json()
+                return JSONResponse({"id": 1, **data})
         """
         methods = methods or ["GET"]
 
@@ -200,6 +238,29 @@ class AltAPI:
                 "has_request": has_request,
             }
 
+            # Build OpenAPI metadata from Pydantic models
+            openapi_request_body = None
+            openapi_responses = None
+
+            if request_model is not None and is_pydantic_model(request_model):
+                openapi_request_body = model_to_request_body_schema(
+                    request_model,
+                    description=f"{func.__name__} request body",
+                )
+
+            if response_model is not None and is_pydantic_model(response_model):
+                openapi_responses = model_to_response_schema(
+                    response_model,
+                    status_code="200",
+                    description="Successful Response",
+                )
+
+            # Store Pydantic models on function for OpenAPI generation
+            func._openapi_pydantic_models = {
+                "request_model": request_model,
+                "response_model": response_model,
+            }
+
             for m in methods:
                 self._router.add_route(path, m.upper(), func)
                 # Register route for OpenAPI
@@ -208,9 +269,25 @@ class AltAPI:
                         "path": path,
                         "method": m.upper(),
                         "handler": func,
+                        "request_model": request_model,
+                        "response_model": response_model,
+                        "summary": summary,
+                        "description": description,
+                        "tags": tags,
+                        "deprecated": deprecated,
                     }
                 )
-                self._add_route_to_openapi(path, m.upper(), func)
+                self._add_route_to_openapi(
+                    path,
+                    m.upper(),
+                    func,
+                    request_model=request_model,
+                    response_model=response_model,
+                    summary=summary,
+                    description=description,
+                    tags=tags,
+                    deprecated=deprecated,
+                )
 
             # Register for caching if @cache decorator was applied
             # Check the function itself first, then unwrap to find _cache_expires
@@ -242,50 +319,170 @@ class AltAPI:
 
         return decorator
 
-    def get(self, path):
+    def get(
+        self,
+        path,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering GET routes.
 
         Args:
             path: Route path
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
         """
-        return self.route(path, ["GET"])
+        return self.route(
+            path,
+            ["GET"],
+            request_model=request_model,
+            response_model=response_model,
+            summary=summary,
+            description=description,
+            tags=tags,
+            deprecated=deprecated,
+        )
 
-    def post(self, path):
+    def post(
+        self,
+        path,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering POST routes.
 
         Args:
             path: Route path
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
         """
-        return self.route(path, ["POST"])
+        return self.route(
+            path,
+            ["POST"],
+            request_model=request_model,
+            response_model=response_model,
+            summary=summary,
+            description=description,
+            tags=tags,
+            deprecated=deprecated,
+        )
 
-    def put(self, path):
+    def put(
+        self,
+        path,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering PUT routes.
 
         Args:
             path: Route path
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
         """
-        return self.route(path, ["PUT"])
+        return self.route(
+            path,
+            ["PUT"],
+            request_model=request_model,
+            response_model=response_model,
+            summary=summary,
+            description=description,
+            tags=tags,
+            deprecated=deprecated,
+        )
 
-    def delete(self, path):
+    def delete(
+        self,
+        path,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering DELETE routes.
 
         Args:
             path: Route path
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
         """
-        return self.route(path, ["DELETE"])
+        return self.route(
+            path,
+            ["DELETE"],
+            request_model=request_model,
+            response_model=response_model,
+            summary=summary,
+            description=description,
+            tags=tags,
+            deprecated=deprecated,
+        )
 
-    def patch(self, path):
+    def patch(
+        self,
+        path,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Decorator for registering PATCH routes.
 
         Args:
             path: Route path
+            request_model: Pydantic model for request body schema (JSON only)
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
         """
-        return self.route(path, ["PATCH"])
+        return self.route(
+            path,
+            ["PATCH"],
+            request_model=request_model,
+            response_model=response_model,
+            summary=summary,
+            description=description,
+            tags=tags,
+            deprecated=deprecated,
+        )
 
     def head(self, path):
         """
@@ -356,13 +553,27 @@ class AltAPI:
         ) and not self._openapi_routes_registered:
             self._register_openapi_routes()
 
-    def cache(self, path: str, expires: int = 300):
+    def cache(
+        self,
+        path: str,
+        expires: int = 300,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ):
         """
         Register a route for caching.
 
         Args:
             path: Route path
             expires: Cache lifetime in seconds
+            response_model: Pydantic model for response body schema (JSONResponse only)
+            summary: Operation summary for OpenAPI
+            description: Operation description for OpenAPI
+            tags: Operation tags for OpenAPI
+            deprecated: Mark operation as deprecated
 
         Example:
             app.cache("/api/data", expires=3600)
@@ -387,9 +598,27 @@ class AltAPI:
             for m in ["GET"]:
                 self._router.add_route(path, m.upper(), func)
                 self._registered_routes.append(
-                    {"path": path, "method": m.upper(), "handler": func}
+                    {
+                        "path": path,
+                        "method": m.upper(),
+                        "handler": func,
+                        "response_model": response_model,
+                        "summary": summary,
+                        "description": description,
+                        "tags": tags,
+                        "deprecated": deprecated,
+                    }
                 )
-                self._add_route_to_openapi(path, m.upper(), func)
+                self._add_route_to_openapi(
+                    path,
+                    m.upper(),
+                    func,
+                    response_model=response_model,
+                    summary=summary,
+                    description=description,
+                    tags=tags,
+                    deprecated=deprecated,
+                )
             return func
 
         return decorator
@@ -679,23 +908,59 @@ class AltAPI:
             meta.get("deprecated", False),
         )
 
-    def _add_route_to_openapi(self, path: str, method: str, handler) -> None:
+    def _add_route_to_openapi(
+        self,
+        path: str,
+        method: str,
+        handler,
+        request_model: Optional[Type] = None,
+        response_model: Optional[Type] = None,
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        deprecated: bool = False,
+    ) -> None:
         """Register a single HTTP route with the OpenAPI generator (call from route())."""
-        summary, description, tags, request_body, responses, deprecated = (
+        # Collect metadata from decorators
+        dec_summary, dec_description, dec_tags, dec_request_body, dec_responses, dec_deprecated = (
             self._collect_openapi_metadata(handler)
             if handler is not None
             else (None, None, None, None, None, False)
         )
+
+        # Use Pydantic models if provided
+        openapi_request_body = None
+        openapi_responses = None
+
+        if request_model is not None and is_pydantic_model(request_model):
+            openapi_request_body = model_to_request_body_schema(
+                request_model,
+                description=f"{handler.__name__} request body",
+            )
+
+        if response_model is not None and is_pydantic_model(response_model):
+            openapi_responses = model_to_response_schema(
+                response_model,
+                status_code="200",
+                description="Successful Response",
+            )
+
+        # Merge: explicit params > decorator metadata > defaults
+        final_request_body = openapi_request_body or dec_request_body
+        final_responses = openapi_responses or dec_responses
+
         self._openapi_generator.add_route(
             path=path,
             method=method,
             handler=handler,
-            summary=summary,
-            description=description,
-            tags=tags,
-            request_body=request_body,
-            responses=responses,
-            deprecated=deprecated,
+            summary=summary or dec_summary,
+            description=description or dec_description,
+            tags=tags or dec_tags,
+            request_body=final_request_body,
+            responses=final_responses,
+            deprecated=deprecated or dec_deprecated,
+            request_model=request_model,
+            response_model=response_model,
         )
 
     async def _handle_ws(self, scope, receive, send):

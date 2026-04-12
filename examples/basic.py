@@ -1,11 +1,12 @@
 """
 Basic AltAPI Example with Middleware and Templates
 
-Demonstrates middleware and templating.
+Demonstrates middleware, templating, and Pydantic model integration.
 """
 
+from pydantic import BaseModel, Field
 from altapi import AltAPI
-from altapi.http import HTMLResponse
+from altapi.http import HTMLResponse, JSONResponse
 from altapi.middleware import Middleware, BaseMiddleware
 from altapi.templating import render_template, TemplateResponse
 from pathlib import Path
@@ -32,6 +33,12 @@ class TimingMiddleware(BaseMiddleware):
         print(f"[TIME] {scope.get('path')} took {time.time() - start:.4f}s")
 
 
+class GreetResponse(BaseModel):
+    """Greeting response model."""
+    message: str = Field(..., description="Greeting message")
+    name: str = Field(..., description="Person's name")
+
+
 # Setup directories
 templates_dir = Path(__file__).resolve().parent / "templates"
 static_dir = Path(__file__).resolve().parent / "static"
@@ -40,6 +47,9 @@ app: AltAPI = AltAPI(
     templates_directory=templates_dir,
     static_directory=static_dir,
     middleware=[Middleware(LoggingMiddleware), Middleware(TimingMiddleware)],
+    title="AltAPI Basic Example",
+    version="1.0.0",
+    description="Basic example with Pydantic integration",
 )
 
 
@@ -48,9 +58,28 @@ async def root(request):
     return HTMLResponse("<h1>Hello, world!</h1>")
 
 
-@app.get("/greet/{name:str}")
+@app.get(
+    "/greet/{name:str}",
+    response_model=GreetResponse,
+    summary="Greet a person",
+    description="Returns a greeting for the specified person",
+    tags=["greetings"],
+)
 async def greet(request) -> TemplateResponse:
     return render_template("greet.html", {"name": request.path_params["name"]})
+
+
+@app.get(
+    "/api/info",
+    summary="Get API info",
+    description="Returns basic API information",
+    tags=["system"],
+)
+async def api_info(request):
+    return JSONResponse({
+        "name": "AltAPI Basic Example",
+        "version": "1.0.0",
+    })
 
 
 if __name__ == "__main__":

@@ -2,22 +2,27 @@
 
 from altapi.openapi_decorators import (
     deprecated,
-    describe_request_body,
-    describe_responses,
-    openapi,
+    openapi_summary,
+    openapi_description,
     tag,
 )
 
 
-def test_openapi_decorator_merges_metadata():
-    @openapi(summary="S", tags=["a"], deprecated=True)
+def test_openapi_summary_decorator():
+    @openapi_summary("Test Summary")
     async def f(request):
         """ignored"""
         pass
 
-    assert f._openapi_metadata["summary"] == "S"
-    assert f._openapi_metadata["tags"] == ["a"]
-    assert f._openapi_metadata["deprecated"] is True
+    assert f._openapi_metadata["summary"] == "Test Summary"
+
+
+def test_openapi_description_decorator():
+    @openapi_description("Test Description")
+    async def f(request):
+        pass
+
+    assert f._openapi_metadata["description"] == "Test Description"
 
 
 def test_tag_decorator():
@@ -36,24 +41,14 @@ def test_deprecated_decorator():
     assert h._openapi_metadata["deprecated"] is True
 
 
-def test_describe_responses():
-    @describe_responses({"200": {"description": "OK"}})
+def test_multiple_decorators_merge():
+    @openapi_summary("Summary")
+    @openapi_description("Description")
+    @tag("tag1", "tag2")
     async def i(request):
         pass
 
-    assert "200" in i._openapi_metadata["responses"]
-
-
-def test_describe_request_body_with_content():
-    schema = {
-        "content": {
-            "application/json": {"schema": {"type": "object"}},
-        }
-    }
-
-    @describe_request_body(schema)
-    async def j(request):
-        pass
-
-    rb = j._openapi_metadata["request_body"]
-    assert "application/json" in rb["content"]
+    meta = i._openapi_metadata
+    assert meta["summary"] == "Summary"
+    assert meta["description"] == "Description"
+    assert meta["tags"] == ["tag1", "tag2"]

@@ -1,8 +1,11 @@
 """
 AltAPI Full Example Application
 
-Demonstrates all major features.
+Demonstrates all major features including Pydantic model integration.
 """
+
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List
 
 from altapi import AltAPI
 from altapi.http import (
@@ -15,7 +18,7 @@ from altapi.http import (
 from altapi.websocket import WebSocket
 from altapi.templating import Jinja2Templates
 from altapi.caching import cache
-from altapi.openapi_decorators import openapi, tag, deprecated, describe_request_body
+from altapi.openapi_decorators import tag, deprecated
 import random
 import os
 
@@ -26,6 +29,61 @@ os.makedirs(templates_dir, exist_ok=True)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_dir, exist_ok=True)
 
+
+# Pydantic models for OpenAPI schemas
+class EchoRequest(BaseModel):
+    """Echo request model."""
+    message: str = Field(..., description="Message to echo")
+
+
+class EchoResponse(BaseModel):
+    """Echo response model."""
+    echo: dict = Field(..., description="Echoed data")
+
+
+class UserResponse(BaseModel):
+    """User response model."""
+    id: int = Field(..., description="User ID")
+    name: str = Field(..., description="User name")
+
+
+class HelloResponse(BaseModel):
+    """Hello response model."""
+    message: str = Field(..., description="Greeting message")
+
+
+class TimestampResponse(BaseModel):
+    """Timestamp response model."""
+    message: str
+    timestamp: float
+
+
+class DataResponse(BaseModel):
+    """Data response model."""
+    received: bool
+    keys: List[str]
+
+
+class StatusResponse(BaseModel):
+    """Status response model."""
+    healthy: bool
+    version: str
+
+
+class SumResponse(BaseModel):
+    """Sum response model."""
+    a: int
+    b: int
+    sum: int
+
+
+class MultiplyResponse(BaseModel):
+    """Multiply response model."""
+    x: float
+    y: float
+    result: float
+
+
 # Create app with templates, static directories and caching
 # OpenAPI and SwaggerUI are enabled by default
 app = AltAPI(
@@ -35,7 +93,7 @@ app = AltAPI(
     # OpenAPI/Swagger settings (defaults: /openapi.json and /docs)
     title="AltAPI Example",
     version="1.0.0",
-    description="A comprehensive example demonstrating AltAPI features including OpenAPI/SwaggerUI",
+    description="A comprehensive example demonstrating AltAPI features including Pydantic model integration and OpenAPI/SwaggerUI",
     # For production, disable OpenAPI:
     # enable_openapi=False,
     # Custom URLs:
@@ -52,8 +110,9 @@ async def home(request):
     return HTMLResponse("<h1>Welcome to AltAPI!</h1>")
 
 
-@app.get("/api/hello")
-@openapi(
+@app.get(
+    "/api/hello",
+    response_model=HelloResponse,
     summary="Hello World",
     description="Returns a greeting message",
     tags=["greetings"],
@@ -62,29 +121,14 @@ async def hello(request):
     return JSONResponse({"message": "Hello, World!"})
 
 
-@app.get("/api/cached")
-@cache(expires=60)  # Cache for 60 seconds
-@openapi(
+@app.get(
+    "/api/cached",
+    response_model=TimestampResponse,
     summary="Cached endpoint",
     description="Returns a cached response with timestamp",
     tags=["caching"],
-    responses={
-        "200": {
-            "description": "Cached response with timestamp",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "message": {"type": "string"},
-                            "timestamp": {"type": "number"},
-                        },
-                    }
-                }
-            },
-        }
-    },
 )
+@cache(expires=60)  # Cache for 60 seconds
 async def cached_endpoint(request):
     import time
 
@@ -93,20 +137,10 @@ async def cached_endpoint(request):
     )
 
 
-@app.post("/api/echo")
-@describe_request_body(
-    {
-        "content": {
-            "application/json": {
-                "schema": {
-                    "type": "object",
-                    "description": "Any JSON data to be echoed back",
-                }
-            }
-        }
-    }
-)
-@openapi(
+@app.post(
+    "/api/echo",
+    request_model=EchoRequest,
+    response_model=EchoResponse,
     summary="Echo endpoint",
     description="Returns the received JSON data",
     tags=["echo"],
@@ -117,28 +151,12 @@ async def echo(request):
 
 
 # Typed path parameters
-@app.get("/api/users/{id:int}")
-@openapi(
+@app.get(
+    "/api/users/{id:int}",
+    response_model=UserResponse,
     summary="Get user by ID",
     description="Returns user information by user ID",
     tags=["users"],
-    responses={
-        "200": {
-            "description": "User found",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "name": {"type": "string"},
-                        },
-                    }
-                }
-            },
-        },
-        "404": {"description": "User not found"},
-    },
 )
 async def get_user(request):
     user_id = request.path_params["id"]  # int
@@ -152,8 +170,8 @@ async def get_item(request):
     return JSONResponse({"name": name, "type": "item"})
 
 
-@app.get("/api/score/{value:float}")
-@openapi(
+@app.get(
+    "/api/score/{value:float}",
     summary="Get score",
     description="Returns score value doubled",
     tags=["scores"],
@@ -389,21 +407,39 @@ async def ping(request):
     return JSONResponse({"status": "pong"})
 
 
-@app.get("/api/status")
+@app.get(
+    "/api/status",
+    response_model=StatusResponse,
+    summary="Status endpoint",
+    description="Returns API status",
+    tags=["system"],
+)
 @deprecated
 async def status(request):
     """Status endpoint (deprecated)."""
     return JSONResponse({"healthy": True, "version": "0.1.0"})
 
 
-@app.post("/api/data")
+@app.post(
+    "/api/data",
+    response_model=DataResponse,
+    summary="POST data endpoint",
+    description="Receives JSON data and returns confirmation",
+    tags=["data"],
+)
 async def post_data(request):
     """POST data endpoint."""
     data = await request.json()
     return JSONResponse({"received": True, "keys": list(data.keys())})
 
 
-@app.get("/api/sum/{a:int}/{b:int}")
+@app.get(
+    "/api/sum/{a:int}/{b:int}",
+    response_model=SumResponse,
+    summary="Sum two numbers",
+    description="Returns the sum of two integers",
+    tags=["math"],
+)
 async def sum_numbers(request):
     """Sum two numbers."""
     a = request.path_params["a"]
@@ -411,7 +447,13 @@ async def sum_numbers(request):
     return JSONResponse({"a": a, "b": b, "sum": a + b})
 
 
-@app.get("/api/multiply/{x:float}/{y:float}")
+@app.get(
+    "/api/multiply/{x:float}/{y:float}",
+    response_model=MultiplyResponse,
+    summary="Multiply two floats",
+    description="Returns the product of two floats",
+    tags=["math"],
+)
 async def multiply(request):
     """Multiply two floats."""
     x = request.path_params["x"]

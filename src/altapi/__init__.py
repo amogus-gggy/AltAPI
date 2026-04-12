@@ -44,11 +44,17 @@ from .ratelimit import (
 from .depends import Depends as _Depends
 from .openapi_spec import OpenAPIGenerator as _OpenAPIGenerator
 from .openapi_decorators import (
-    openapi as _openapi,
+    openapi_summary as _openapi_summary,
+    openapi_description as _openapi_description,
     tag as _tag,
     deprecated as _deprecated,
-    describe_responses as _describe_responses,
-    describe_request_body as _describe_request_body,
+)
+from .pydantic_schemas import (
+    model_to_openapi_ref as _model_to_openapi_ref,
+    model_to_request_body_schema as _model_to_request_body_schema,
+    model_to_response_schema as _model_to_response_schema,
+    extract_pydantic_schemas as _extract_pydantic_schemas,
+    is_pydantic_model as _is_pydantic_model,
 )
 from .swagger import (
     SwaggerUI as _SwaggerUI,
@@ -95,11 +101,24 @@ _IMPORT_MAPPING = {
     "RateLimitResult": ("altapi.ratelimit", _RateLimitResult),
     "Depends": ("altapi.depends", _Depends),
     "OpenAPIGenerator": ("altapi.openapi_spec", _OpenAPIGenerator),
-    "openapi": ("altapi.openapi_decorators", _openapi),
+    "openapi_summary": ("altapi.openapi_decorators", _openapi_summary),
+    "openapi_description": ("altapi.openapi_decorators", _openapi_description),
     "tag": ("altapi.openapi_decorators", _tag),
     "deprecated": ("altapi.openapi_decorators", _deprecated),
-    "describe_responses": ("altapi.openapi_decorators", _describe_responses),
-    "describe_request_body": ("altapi.openapi_decorators", _describe_request_body),
+    "model_to_openapi_ref": ("altapi.pydantic_schemas", _model_to_openapi_ref),
+    "model_to_request_body_schema": (
+        "altapi.pydantic_schemas",
+        _model_to_request_body_schema,
+    ),
+    "model_to_response_schema": (
+        "altapi.pydantic_schemas",
+        _model_to_response_schema,
+    ),
+    "extract_pydantic_schemas": (
+        "altapi.pydantic_schemas",
+        _extract_pydantic_schemas,
+    ),
+    "is_pydantic_model": ("altapi.pydantic_schemas", _is_pydantic_model),
     "SwaggerUI": ("altapi.swagger", _SwaggerUI),
     "get_swagger_ui_html": ("altapi.swagger", _get_swagger_ui_html),
 }
@@ -155,11 +174,15 @@ __all__ = [
     "RateLimitResult",
     "Depends",
     "OpenAPIGenerator",
-    "openapi",
+    "openapi_summary",
+    "openapi_description",
     "tag",
     "deprecated",
-    "describe_responses",
-    "describe_request_body",
+    "model_to_openapi_ref",
+    "model_to_request_body_schema",
+    "model_to_response_schema",
+    "extract_pydantic_schemas",
+    "is_pydantic_model",
     "SwaggerUI",
     "get_swagger_ui_html",
 ]
