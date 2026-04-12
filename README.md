@@ -10,6 +10,10 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 
 ## Changelog
 
+## v2.1.0
+- Added CORSMiddleware (altapi.middleware.cors.CORSMiddleware) by @VxidDev in #7
+- Remaked OpenAPI instegration, by generating docs from Pydantic models.(wirhout data validation for now)
+
 ### v2.0.0
 - Added **OpenAPI** and **SwaggerUI** integration.
 - Added CLI
