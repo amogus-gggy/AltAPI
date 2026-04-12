@@ -63,7 +63,7 @@ cdef class Router:
                 self._static_routes[path_key] = True
             else:
                 self._route_order.append(path_key)
-        
+
         methods = self.routes[path_key]
         methods[method_upper] = handler
 
@@ -73,7 +73,7 @@ cdef class Router:
             list pattern_info
             bint has_params = False
             tuple item
-        
+
         if path not in self.websocket_routes:
             pattern_info = self._compile_pattern(path)
             self._pattern_cache[path] = pattern_info
@@ -87,7 +87,7 @@ cdef class Router:
                 self._ws_static_routes[path] = True
             else:
                 self._ws_route_order.append(path)
-        
+
         self.websocket_routes[path] = handler
 
     cpdef tuple find_handler(self, str path, str method):
@@ -163,10 +163,10 @@ cdef class Router:
             if match:
                 param_name = match.group(1)
                 param_type = match.group(2) or "str"
-                
+
                 if param_type not in PATH_CONVERTERS:
                     raise ValueError(f"Unknown path type: {param_type}")
-                
+
                 converter = PATH_CONVERTERS[param_type]
                 compiled.append((param_name, converter))
             else:
