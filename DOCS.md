@@ -39,7 +39,7 @@
 | **DI** | Dependency injection with automatic resource cleanup |
 | **Caching** | Per-worker in-memory cache with pluggable backends |
 | **Rate Limiting** | Multi-worker shared rate limiting with batch limits |
-| **OpenAPI** | Auto-generated OpenAPI 3.0 spec and Swagger UI |
+| **OpenAPI** | Auto-generated OpenAPI 3.0 spec and Swagger UI with Pydantic model support |
 | **Templates** | Jinja2 template rendering |
 | **Server** | Built-in multi-worker server via `app.run()` |
 | **CLI** | Project scaffolding and run commands |
@@ -61,6 +61,7 @@ pip install altapi
 - jinja2 >= 3.0.0
 - orjson
 - Cython >= 3.0.0
+- pydantic >= 2.0.0
 
 ### Development extras
 
@@ -68,7 +69,7 @@ pip install altapi
 pip install altapi[dev]
 ```
 
-Adds: `pytest >= 8.0.0`, `httpx >= 0.27.0`, `cython >= 3.0.0`
+Adds: `pytest >= 8.0.0`, `httpx >= 0.27.0`, `email-validator >= 2.0.0`
 
 ---
 
@@ -806,79 +807,211 @@ app = AltAPI(
 )
 ```
 
-### `@openapi` Decorator
+### Pydantic Model Integration
 
-Add metadata to individual endpoints:
+AltAPI supports Pydantic models for request and response schema generation. Pass `request_model` and `response_model` parameters to route decorators:
 
 ```python
-from altapi.openapi_decorators import openapi
+from pydantic import BaseModel, Field
+from typing import Optional
 
-@app.get("/users/{id:int}")
-@openapi(
-    summary="Get user by ID",
-    description="Returns a single user object",
-    tags=["users"],
-    responses={
-        "200": {
-            "description": "User found",
-            "content": {
-                "application/json": {
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "name": {"type": "string"},
-                            "email": {"type": "string", "format": "email"},
-                        }
-                    }
-                }
-            }
-        },
-        "404": {"description": "User not found"}
-    }
-)
-async def get_user(request):
-    user_id = request.path_params["id"]
-    return JSONResponse({"id": user_id, "name": f"User {user_id}"})
+class UserCreate(BaseModel):
+    """Request model for creating пользователя."""
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., description="User email")
+    age: Optional[int] = Field(None, ge=0, le=150)
+
+
+class UserResponse(BaseModel):
+    """Response model for пользователя."""
+    id: int
+    name: str
+    email: str
+    age: Optional[int]
 ```
 
-### `@describe_request_body`
-
-Document POST/PUT/PATCH request bodies:
+#### POST with Request and Response Models
 
 ```python
-from altapi.openapi_decorators import openapi, describe_request_body
-
-@app.post("/users")
-@describe_request_body({
-    "content": {
-        "application/json": {
-            "schema": {
-                "type": "object",
-                "required": ["name", "email"],
-                "properties": {
-                    "name": {"type": "string"},
-                    "email": {"type": "string", "format": "email"},
-                }
-            }
-        }
-    }
-})
-@openapi(summary="Create user", tags=["users"])
+@app.post(
+    "/api/users",
+    request_model=UserCreate,
+    response_model=UserResponse,
+    summary="Create user",
+    description="Creates a new user",
+    tags=["users"],
+)
 async def create_user(request):
     data = await request.json()
     return JSONResponse({"id": 1, **data})
 ```
 
-### All OpenAPI Decorators
+#### GET with Response Model Only
+
+```python
+@app.get(
+    "/api/users/{id:int}",
+    response_model=UserResponse,
+    summary="Get user by ID",
+    tags=["users"],
+)
+async def get_user(request):
+    user_id = request.path_params["id"]
+    return JSONResponse({
+        "id": user_id,
+        "name": f"User {user_id}",
+        "email": f"user{user_id}@example.com",
+        "age": 25,
+    })
+```
+
+#### PUT with Both Models
+
+```python
+@app.put(
+    "/api/users/{id:int}",
+    request_model=UserUpdate,
+    response_model=UserResponse,
+    summary="Update user",
+    tags=["users"],
+)
+async def update_user(request):
+    user_id = request.path_params["id"]
+    data = await request.json()
+    return JSONResponse({"id": user_id, **data})
+```
+
+#### DELETE with Response Model
+
+```python
+@app.delete(
+    "/api/users/{id:int}",
+    response_model=MessageResponse,
+    summary="Delete user",
+    tags=["users"],
+)
+async def delete_user(request):
+    user_id = request.path_params["id"]
+    return JSONResponse({"message": f"User {user_id} deleted"})
+```
+
+### Generated OpenAPI Specification
+
+AltAPI automatically generates `components/schemas` from your Pydantic models:
+
+```json
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "My API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/users": {
+      "post": {
+        "summary": "Create user",
+        "tags": ["users"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "UserCreate": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "maxLength": 100, "minLength": 1},
+          "email": {"type": "string"},
+          "age": {"type": "integer", "maximum": 150, "minimum": 0}
+        },
+        "required": ["name", "email"]
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "email": {"type": "string"},
+          "age": {"type": "integer"}
+        },
+        "required": ["id", "name", "email"]
+      }
+    }
+  }
+}
+```
+
+### Route Decorator Parameters
+
+All HTTP method decorators accept the same parameters:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `path` | `str` | Route path |
+| `request_model` | `Type[BaseModel]` | Pydantic model for request body schema (JSON only) |
+| `response_model` | `Type[BaseModel]` | Pydantic model for response body schema (JSONResponse only) |
+| `summary` | `str` | Operation summary for OpenAPI |
+| `description` | `str` | Operation description for OpenAPI |
+| `tags` | `List[str]` | Operation tags for OpenAPI |
+| `deprecated` | `bool` | Mark operation as deprecated |
+
+Example:
+
+```python
+@app.get("/path", response_model=MyModel, summary="Summary", tags=["tag1"])
+@app.post("/path", request_model=CreateModel, response_model=ResponseModel)
+@app.put("/path/{id:int}", request_model=UpdateModel, response_model=ResponseModel)
+@app.delete("/path/{id:int}", response_model=MessageResponse)
+@app.patch("/path/{id:int}", request_model=UpdateModel, response_model=ResponseModel)
+```
+
+### Additional Decorators
 
 | Decorator | Description |
 |---|---|
-| `@openapi(...)` | Full endpoint metadata (summary, description, tags, responses) |
 | `@tag(...)` | Add tags to endpoint |
 | `@deprecated` | Mark endpoint as deprecated |
-| `@describe_responses(...)` | Add response schemas |
-| `@describe_request_body(...)` | Add request body schema |
+| `@openapi_summary(...)` | Add operation summary |
+| `@openapi_description(...)` | Add operation description |
+
+### Caching with Pydantic Models
+
+The `app.cache()` method also supports `response_model`:
+
+```python
+from altapi.caching import cache
+
+@app.get(
+    "/api/cached",
+    response_model=TimestampResponse,
+    summary="Cached endpoint",
+    tags=["data"],
+)
+@cache(expires=300)
+async def cached_endpoint(request):
+    import time
+    return JSONResponse({"timestamp": time.time()})
+```
 
 AltAPI also auto-generates documentation from: registered routes, path parameter types, handler docstrings, and function signatures.
 
@@ -1152,6 +1285,55 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
 ```
 
+### Pydantic Integration Example
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional
+from altapi import AltAPI
+from altapi.http import JSONResponse
+
+
+class UserCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., description="User email")
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+
+
+app = AltAPI(title="User API", version="1.0.0")
+
+
+@app.post(
+    "/api/users",
+    request_model=UserCreate,
+    response_model=UserResponse,
+    summary="Create user",
+    tags=["users"],
+)
+async def create_user(request):
+    data = await request.json()
+    return JSONResponse({"id": 1, **data})
+
+
+@app.get(
+    "/api/users/{id:int}",
+    response_model=UserResponse,
+    summary="Get user",
+    tags=["users"],
+)
+async def get_user(request):
+    return JSONResponse({"id": 1, "name": "John", "email": "john@example.com"})
+
+
+if __name__ == "__main__":
+    app.run()
+```
+
 ### CRUD Application with SQLite & DI
 
 ```python
@@ -1199,9 +1381,10 @@ if __name__ == "__main__":
 ```
 
 More examples in `examples/`:
-- `examples/webapp.py` — Full CRUD app with web UI and API
-- `examples/sqlite_example.py` — SQLite + Dependency Injection
-- `examples/app.py` — Feature showcase
+- `examples/app.py` — Full feature showcase with Pydantic models
+- `examples/basic.py` — Basic example with middleware and templates
+- `examples/cache_example.py` — Caching with Pydantic response models
+- `examples/pydantic_example.py` — Comprehensive Pydantic integration demo
 
 ---
 
@@ -1244,6 +1427,10 @@ AltAPI/
 │   ├── router.pyx               # Cython router
 │   ├── cli.py                   # CLI tool
 │   ├── cli_templates/           # Project templates
+│   ├── pydantic_schemas.py      # Pydantic model integration
+│   ├── openapi_spec.py          # OpenAPI specification generator
+│   ├── openapi_decorators.py    # OpenAPI decorators
+│   ├── swagger.py               # Swagger UI integration
 │   ├── http/
 │   │   ├── request.py           # Request class
 │   │   └── responses.py         # Response classes
@@ -1259,6 +1446,7 @@ AltAPI/
 │   │   └── limit.py             # rate_limit, rate_limit_batch
 │   └── shared/                  # Shared manager for multi-worker
 ├── examples/
+├── tests/
 ├── test_app.py
 ├── pyproject.toml
 ├── setup.py
