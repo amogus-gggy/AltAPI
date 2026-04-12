@@ -12,12 +12,24 @@ extensions = [
         "altapi.router",
         ["src/altapi/router.pyx"],
     ),
+    Extension(
+        "altapi.caching.cache",
+        ["src/altapi/caching/cache.py"],
+    ),
+    Extension(
+        "altapi.ratelimit.limit",
+        ["src/altapi/ratelimit/limit.py"],
+    ),
+    Extension(
+        "altapi.ratelimit.storage",
+        ["src/altapi/ratelimit/storage.py"],
+    ),
 ]
 
 
 setup(
     name="altapi",
-    version="2.0.0",
+    version="2.0.1",
     author="amogus-gggy",
     description="A simple and fast ASGI microframework for Python with WebSocket support.",
     long_description=open("README.md", encoding="utf-8").read(),
