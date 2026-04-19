@@ -10,6 +10,8 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 
 ## Changelog
 
+## v2.2.0
+- Added request validation via PyDantic models.()
 ## v2.1.0
 - Added CORSMiddleware (altapi.middleware.cors.CORSMiddleware) by @VxidDev in #7
 - Remaked OpenAPI instegration, by generating docs from Pydantic models.(wirhout data validation for now)
@@ -20,25 +22,6 @@ A simple and fast ASGI microframework for Python with WebSocket support.
 - Internal optimizations
 - Migrated from ujson to orjson
 - Full test coverage
-
-### v1.4.0
-- Added **Dependency Injection** system with automatic cleanup:
-  - Generator-based dependencies with `yield` for resource management
-  - Nested dependencies (dependencies can depend on other dependencies)
-  - Per-request caching of dependencies
-  - Async dependency support
-  - Automatic `Request` injection into dependencies
-- Added **Request State** (`request.state`) for passing data between middleware and handlers
-- **Rate Limiting optimized** — migrated to **Shared Memory** architecture:
-  - Zero network overhead for multi-worker synchronization
-  - Fixed race conditions in request counting
-  - Memory leak fixes in storage backends
-- Added examples:
-  - 'examples/webapp.py' - full user managment system
-- Fixed cleanup guarantees — `finally` blocks now always execute even on handler errors
-- RedirectResponse returning 303 code, instead of 307
-
-
 
 
 

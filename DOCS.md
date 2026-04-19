@@ -809,7 +809,7 @@ app = AltAPI(
 
 ### Pydantic Model Integration
 
-AltAPI supports Pydantic models for request and response schema generation. Pass `request_model` and `response_model` parameters to route decorators:
+AltAPI supports Pydantic models for request and response schema generation. Pass `request_model` and `response_model` parameters to route decorators(framework, starting from v2.2.0 also is validating data with this models):
 
 ```python
 from pydantic import BaseModel, Field
