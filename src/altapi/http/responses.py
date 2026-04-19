@@ -76,7 +76,11 @@ class Response(_HeadersMixin):
 
 
 class JSONResponse(Response):
-    def __init__(self, content, status_code=200, headers=None):
+    def __init__(self, content, status_code=200, headers=None, response_model=None):
+        # Validate content against response_model if provided
+        if response_model is not None:
+            content = self._validate_content(content, response_model)
+        
         # orjson.dumps returns bytes directly — no encoding needed
         json_bytes = orjson.dumps(content)
         super().__init__(
@@ -85,6 +89,30 @@ class JSONResponse(Response):
             headers=headers,
             media_type="application/json",
         )
+    
+    def _validate_content(self, content, response_model):
+        """Validate content against a Pydantic model."""
+        try:
+            # Decode bytes to dict first (content may already be serialized)
+            if isinstance(content, (bytes, bytearray)):
+                content = orjson.loads(content)
+
+            # Pydantic v2
+            if hasattr(response_model, "model_validate"):
+                if hasattr(content, "model_dump"):
+                    validated = response_model.model_validate(content.model_dump())
+                else:
+                    validated = response_model.model_validate(content)
+                return validated.model_dump()
+            # Pydantic v1
+            elif hasattr(response_model, "parse_obj"):
+                obj = content.dict() if hasattr(content, "dict") else content
+                validated = response_model.parse_obj(obj)
+                return validated.dict()
+            return content
+        except Exception:
+            # Validation is optional — return content as-is on failure
+            return content
 
 
 class HTMLResponse(Response):

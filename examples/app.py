@@ -31,11 +31,6 @@ os.makedirs(static_dir, exist_ok=True)
 
 
 # Pydantic models for OpenAPI schemas
-class EchoRequest(BaseModel):
-    """Echo request model."""
-    message: str = Field(..., description="Message to echo")
-
-
 class EchoResponse(BaseModel):
     """Echo response model."""
     echo: dict = Field(..., description="Echoed data")
@@ -139,7 +134,6 @@ async def cached_endpoint(request):
 
 @app.post(
     "/api/echo",
-    request_model=EchoRequest,
     response_model=EchoResponse,
     summary="Echo endpoint",
     description="Returns the received JSON data",

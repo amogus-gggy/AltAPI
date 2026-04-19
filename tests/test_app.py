@@ -144,3 +144,33 @@ async def test_enable_openapi_method(tmp_path):
         # does not call _register_openapi_routes again; this checks method sets attrs
         assert app._openapi_url == "/o.json"
         assert app._docs_url == "/d"
+
+
+@pytest.mark.asyncio
+async def test_options_preflight_returns_204(tmp_path):
+    """OPTIONS on a registered path should return 204 with Allow header."""
+    app = AltAPI(enable_openapi=False, templates_directory=str(tmp_path))
+
+    @app.post("/users")
+    async def create_user(request):
+        return JSONResponse({"ok": True})
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.options("/users")
+        assert r.status_code == 204
+        assert "POST" in r.headers.get("allow", "")
+        assert "OPTIONS" in r.headers.get("allow", "")
+        assert r.headers.get("access-control-allow-origin") == "*"
+        assert "POST" in r.headers.get("access-control-allow-methods", "")
+        assert "Content-Type" in r.headers.get("access-control-allow-headers", "")
+
+
+@pytest.mark.asyncio
+async def test_options_unknown_path_returns_404(tmp_path):
+    """OPTIONS on an unknown path should still return 404."""
+    app = AltAPI(enable_openapi=False, templates_directory=str(tmp_path))
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.options("/nonexistent")
+        assert r.status_code == 404

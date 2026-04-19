@@ -28,23 +28,31 @@ from .pydantic_schemas import (
 _sync_executor = ThreadPoolExecutor(max_workers=10)
 
 
+_gc_optimized = False
+
+
 def _run_gc_optimize():
     """
-    Garbage collector optimization.
+    Garbage collector optimization. Runs only once per process.
 
     Applies the following optimizations:
     - Forced garbage collection
     - Object freezing
     - Increased GC thresholds
     """
+    global _gc_optimized
+    if _gc_optimized:
+        return
+    _gc_optimized = True
+
     import gc
 
     gc.collect(2)
     gc.freeze()
     allocs, gen1, gen2 = gc.get_threshold()
     allocs = 50000
-    gen1 = gen1 * 2
-    gen2 = gen2 * 2
+    gen1 = min(gen1 * 2, 2**30)
+    gen2 = min(gen2 * 2, 2**30)
     gc.set_threshold(allocs, gen1, gen2)
 
 
@@ -813,6 +821,22 @@ class AltAPI:
         handler, params = self._router.find_handler(path, method)
 
         if not handler:
+            # Auto-handle OPTIONS preflight for any path that has registered routes
+            if method == "OPTIONS":
+                allowed = self._get_allowed_methods(path)
+                if allowed:
+                    methods_str = ", ".join(sorted(allowed))
+                    raw_headers = [
+                        (b"allow", methods_str.encode()),
+                        (b"access-control-allow-origin", b"*"),
+                        (b"access-control-allow-methods", methods_str.encode()),
+                        (b"access-control-allow-headers", b"Content-Type, Authorization, Accept, X-Requested-With"),
+                        (b"access-control-max-age", b"600"),
+                        (b"content-length", b"0"),
+                    ]
+                    await send({"type": "http.response.start", "status": 204, "headers": raw_headers})
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                    return
             return await HTMLResponse(DEFAULT_404_BODY, 404)(scope, receive, send)
 
         # Use pre-computed handler metadata (performance optimization)
@@ -833,6 +857,17 @@ class AltAPI:
 
         request = Request(scope, receive, params)
 
+        # Validate request body against request_model if provided
+        request_model = self._get_request_model(handler)
+        if request_model is not None:
+            try:
+                await self._validate_request(request, request_model)
+            except ValueError as e:
+                return await JSONResponse(
+                    {"error": "Validation error", "details": str(e)},
+                    status_code=400
+                )(scope, receive, send)
+
         # Fast path: no dependencies (most common case) - no try/finally overhead
         if not depends_map:
             if is_async:
@@ -843,6 +878,20 @@ class AltAPI:
                     handler,
                     request,
                 )
+            
+            # Validate response if response_model is provided
+            response_model = self._get_response_model(handler)
+            if response_model is not None and hasattr(response, "content"):
+                # For JSONResponse, validate the content
+                if isinstance(response, JSONResponse):
+                    # Re-create with validation
+                    response = JSONResponse(
+                        response.content,
+                        status_code=response.status_code,
+                        headers=response.headers,
+                        response_model=response_model
+                    )
+
             return await response(scope, receive, send)
 
         # Slow path: with dependencies
@@ -881,6 +930,19 @@ class AltAPI:
                     **call_kwargs,
                 )
 
+            # Validate response if response_model is provided
+            response_model = self._get_response_model(handler)
+            if response_model is not None and hasattr(response, "content"):
+                # For JSONResponse, validate the content
+                if isinstance(response, JSONResponse):
+                    # Re-create with validation
+                    response = JSONResponse(
+                        response.content,
+                        status_code=response.status_code,
+                        headers=response.headers,
+                        response_model=response_model
+                    )
+
             return await response(scope, receive, send)
         except Exception:
             await HTMLResponse(DEFAULT_500_BODY, 500)(scope, receive, send)
@@ -888,6 +950,55 @@ class AltAPI:
         finally:
             # Cleanup generator-based dependencies
             await injector.cleanup()
+
+    def _get_allowed_methods(self, path: str):
+        """Return the set of HTTP methods registered for a given path (supports dynamic routes)."""
+        allowed = set()
+        for route in self._registered_routes:
+            rpath = route["path"]
+            rmethod = route["method"]
+            # Try exact match first
+            if rpath == path:
+                allowed.add(rmethod)
+                continue
+            # Try dynamic match via router pattern cache
+            pattern_info = self._router._pattern_cache.get(rpath)
+            if pattern_info is not None:
+                params = self._router._match_path_fast(pattern_info, path)
+                if params is not None:
+                    allowed.add(rmethod)
+        if allowed:
+            allowed.add("OPTIONS")
+        return allowed
+
+    def _get_request_model(self, handler):
+        """Get the request model for a handler if one was registered."""
+        # Check _openapi_pydantic_models first (from route decorator)
+        if hasattr(handler, "_openapi_pydantic_models"):
+            return handler._openapi_pydantic_models.get("request_model")
+        return None
+
+    def _get_response_model(self, handler):
+        """Get the response model for a handler if one was registered."""
+        # Check _openapi_pydantic_models first (from route decorator)
+        if hasattr(handler, "_openapi_pydantic_models"):
+            return handler._openapi_pydantic_models.get("response_model")
+        return None
+
+    async def _validate_request(self, request, request_model):
+        """Validate request body against a Pydantic model."""
+        try:
+            body = await request.json()
+            
+            # Try Pydantic v2 first
+            if hasattr(request_model, "model_validate"):
+                request_model.model_validate(body)
+            # Try Pydantic v1
+            elif hasattr(request_model, "parse_obj"):
+                request_model.parse_obj(body)
+            # If no validation methods, skip validation
+        except Exception as e:
+            raise ValueError(f"Request validation failed: {e}")
 
     def _collect_openapi_metadata(self, handler):
         """Walk handler wrappers (e.g. @cache) and take innermost OpenAPI metadata."""
