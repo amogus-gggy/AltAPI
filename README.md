@@ -1,3 +1,5 @@
+###Development of the project has stopped for unknown period of time. 
+
 # AltAPI
 
 A simple and fast ASGI microframework for Python with WebSocket support.
